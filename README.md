@@ -46,10 +46,10 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
 
 ## Настройка
 
-Строка `openrouter-models` в `~/.dsh/profiles/web/cordis.patch.yml`:
+Строка `openrouter-explorer-free` в `~/.dsh/profiles/web/cordis.patch.yml`:
 
 ```yaml
-- id: openrouter-models
+- id: openrouter-explorer-free
   name: dsh-openrouter-explorer-free
   config:
     provider: openrouter            # id провайдера в llm-pi-ai
@@ -94,7 +94,7 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
 
 ```
 index.js                entry: host-плагин (mount сервиса и API)
-cordis.patch.yml        слой бандла (одна строка openrouter-models)
+cordis.patch.yml        слой бандла (одна строка openrouter-explorer-free)
 lib/client.js           browser half: вкладка правой панели (client-module формат)
 src/host/catalog.js     чистая логика: нормализация, история, скидки, события
 src/host/service.js     сеть, состояние, планировщик, auto-route
