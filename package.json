@@ -1,6 +1,6 @@
 {
   "name": "dsh-openrouter-explorer-free",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "OpenRouter Explorer Free — a DeepSeek Harness plugin: model catalog with live prices, free models, discounts, 24h auto-refresh and one-click free-model auto-routing.",
   "keywords": [
     "deepseek-harness",

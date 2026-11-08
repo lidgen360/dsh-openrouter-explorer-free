@@ -229,3 +229,22 @@ test('events can be listed, filtered and marked read', () => {
   assert.equal(listEvents(state, { type: 'price_drop' }).events.length, 1)
   assert.deepEqual(markEventsRead(state, { all: true }), { unread: 0, marked: 2 })
 })
+
+test('modality filter is inclusive: universal models stay in every supported category', () => {
+  const state = {
+    models: [
+      { id: 'vendor/text', name: 'Text', author: 'vendor', status: 'active', input_modalities: ['text'], output_modalities: ['text'] },
+      { id: 'vendor/universal', name: 'Universal', author: 'vendor', status: 'active', input_modalities: ['text', 'image', 'video', 'audio'], output_modalities: ['text'] },
+      { id: 'vendor/audio-out', name: 'AudioOut', author: 'vendor', status: 'active', input_modalities: ['text'], output_modalities: ['text', 'audio'] },
+    ],
+  }
+  const ids = (filters) => listModels(state, filters).map((model) => model.id).sort()
+
+  // input or output match, and the multimodal model is not hidden by its text capability
+  assert.deepEqual(ids({ modality: 'video' }), ['vendor/universal'])
+  assert.deepEqual(ids({ modality: 'audio' }), ['vendor/audio-out', 'vendor/universal'])
+  assert.deepEqual(ids({ modality: 'image' }), ['vendor/universal'])
+  assert.deepEqual(ids({ modality: 'text' }), ['vendor/audio-out', 'vendor/text', 'vendor/universal'])
+  // no modality filter → everything
+  assert.equal(ids({}).length, 3)
+})
