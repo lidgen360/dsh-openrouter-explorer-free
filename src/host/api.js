@@ -79,6 +79,9 @@ async function handle(service, req, res) {
         type: query.get('type') || '',
       }))
     }
+    if (method === 'GET' && path === '/rankings') {
+      return sendJson(res, 200, await service.rankings({ refresh: query.get('refresh') }))
+    }
     if (method === 'POST' && path === '/events/read') {
       return sendJson(res, 200, await service.readEvents(await readBody(req)))
     }

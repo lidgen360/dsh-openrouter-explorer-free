@@ -19,3 +19,13 @@ export function stateFilePath() {
   if (override) return path.resolve(override)
   return path.join(dshHome(), 'openrouter-explorer-free', 'state.json')
 }
+
+/**
+ * Absolute path of the rankings cache. Kept beside the catalog state but in a
+ * separate file: rankings refresh much more often and are fully derived data.
+ */
+export function rankingsFilePath() {
+  const override = String(process.env.DSH_OPENROUTER_RANKINGS_FILE || '').trim()
+  if (override) return path.resolve(override)
+  return path.join(dshHome(), 'openrouter-explorer-free', 'rankings.json')
+}

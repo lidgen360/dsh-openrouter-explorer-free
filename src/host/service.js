@@ -6,8 +6,16 @@
 import crypto from 'node:crypto'
 import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
 import { emptyState, readState, writeState, withStateLock } from './state.js'
-import { legacyStateFilePath, stateFilePath } from './home.js'
+import { legacyStateFilePath, rankingsFilePath, stateFilePath } from './home.js'
 import { ensureProviderModel, ensureProviderRoute } from './provider.js'
+import {
+  RANKINGS_SOURCES,
+  catalogIndex,
+  enrichBenchmark,
+  enrichUsage,
+  normalizeBenchmarks,
+  normalizeUsage,
+} from './rankings.js'
 
 const DEFAULT_SOURCE = 'https://openrouter.ai/api/v1/models'
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
@@ -37,6 +45,10 @@ export function normalizeConfig(raw = {}) {
     journalDays: clampNumber(raw.journalDays, 1, 3_650, 90),
     autoProvision: raw.autoProvision !== false,
     stateFile: raw.stateFile ? String(raw.stateFile) : undefined,
+    // Rankings are derived data with a short TTL (hours) and a bounded table size.
+    rankingsHours: clampNumber(raw.rankingsHours, 1, 24 * 30, 6),
+    rankingsLimit: clampNumber(raw.rankingsLimit, 5, 200, 60),
+    rankingsFile: raw.rankingsFile ? String(raw.rankingsFile) : undefined,
   }
 }
 
@@ -66,11 +78,13 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const clock = options.now || (() => new Date())
   const file = settings.stateFile || stateFilePath()
+  const rankingsFile = settings.rankingsFile || rankingsFilePath()
   const logger = ctx?.logger
 
   // No long-lived in-memory snapshot: several DSH profiles may share one
   // DSH_HOME, so every operation re-reads the file (under a lock when writing).
   let inflight = null
+  let rankingsInflight = null
   let timer = null
   let disposed = false
 
@@ -95,27 +109,30 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     })
   }
 
-  async function fetchCatalog() {
+  async function fetchJson(url) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), settings.syncTimeoutMs)
     try {
-      const response = await fetchImpl(settings.source, { headers: { accept: 'application/json' }, signal: controller.signal })
+      const response = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: controller.signal })
       const text = await response.text()
       if (!response.ok) throw new Error(`OpenRouter: HTTP ${response.status} — ${String(text).slice(0, 200)}`)
-      let payload = null
       try {
-        payload = JSON.parse(text)
+        return JSON.parse(text)
       } catch {
         throw new Error('OpenRouter: ответ не является JSON')
       }
-      if (!payload || !Array.isArray(payload.data)) throw new Error('OpenRouter: в ответе нет массива data')
-      return payload.data
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error(`OpenRouter: таймаут ${Math.round(settings.syncTimeoutMs / 1000)} с`)
       throw error
     } finally {
       clearTimeout(timeout)
     }
+  }
+
+  async function fetchCatalog() {
+    const payload = await fetchJson(settings.source)
+    if (!payload || !Array.isArray(payload.data)) throw new Error('OpenRouter: в ответе нет массива data')
+    return payload.data
   }
 
   async function recordFailure(error, at, startedAt) {
@@ -459,6 +476,70 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     })
   }
 
+  /**
+   * Usage leaderboard + benchmark tables, cached in rankings.json for
+   * `rankingsHours`. `refresh: true` forces a fetch; a failed refresh keeps the
+   * previous snapshot and reports `stale: true` instead of an empty view.
+   */
+  async function refreshRankings(previous) {
+    const at = nowIso()
+    try {
+      const [usageRaw, benchmarkRaw] = await Promise.all([
+        fetchJson(RANKINGS_SOURCES.usage),
+        fetchJson(RANKINGS_SOURCES.benchmarks),
+      ])
+      const current = await ensureState()
+      const index = catalogIndex(current.models)
+      const usage = normalizeUsage(usageRaw, { limit: settings.rankingsLimit })
+      usage.models = usage.models.map((row) => enrichUsage(row, index))
+      const benchmarks = normalizeBenchmarks(benchmarkRaw)
+      benchmarks.models = benchmarks.models.map((row) => enrichBenchmark(row, index))
+      const payload = {
+        schema_version: 1,
+        at,
+        source: { usage: RANKINGS_SOURCES.usage, benchmarks: RANKINGS_SOURCES.benchmarks },
+        usage,
+        benchmarks,
+        limits: { hours: settings.rankingsHours, limit: settings.rankingsLimit },
+      }
+      await writeState(rankingsFile, payload)
+      log(`рейтинги обновлены: ${usage.models.length} моделей, бенчмарков ${benchmarks.models.length}`)
+      return { ...payload, cached: false, stale: false }
+    } catch (error) {
+      const message = String(error?.message || error)
+      log(`рейтинги не обновились: ${message}`)
+      if (previous) return { ...previous, cached: true, stale: true, error: message }
+      return {
+        schema_version: 1,
+        at: null,
+        usage: { at: null, total: 0, models: [] },
+        benchmarks: { benchmark_version: null, counts: { intelligence: 0, coding: 0, agentic: 0 }, models: [] },
+        cached: false,
+        stale: true,
+        error: message,
+      }
+    }
+  }
+
+  function rankings(input = {}) {
+    const refresh = input?.refresh === true || input?.refresh === '1' || input?.refresh === 'true'
+    const read = async () => {
+      const cached = await readState(rankingsFile)
+      const ageMs = cached?.at ? clock().getTime() - Date.parse(cached.at) : Number.POSITIVE_INFINITY
+      const fresh = Number.isFinite(ageMs) && ageMs >= 0 && ageMs < settings.rankingsHours * 3_600_000
+      if (cached && fresh && !refresh) return { ...cached, cached: true, stale: false }
+      if (rankingsInflight) return rankingsInflight
+      const started = refreshRankings(cached)
+      rankingsInflight = started
+      const clear = () => {
+        if (rankingsInflight === started) rankingsInflight = null
+      }
+      started.then(clear, clear)
+      return started
+    }
+    return read()
+  }
+
   async function settingsView() {
     return {
       provider: settings.provider,
@@ -472,6 +553,9 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       journal_days: settings.journalDays,
       auto_provision: settings.autoProvision,
       state_file: file,
+      rankings_hours: settings.rankingsHours,
+      rankings_limit: settings.rankingsLimit,
+      rankings_file: rankingsFile,
     }
   }
 
@@ -522,9 +606,10 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     models,
     events,
     readEvents,
+    rankings,
     syncNow,
     autoRoute,
     useModel,
-    _internals: { settings, file },
+    _internals: { settings, file, rankingsFile },
   }
 }

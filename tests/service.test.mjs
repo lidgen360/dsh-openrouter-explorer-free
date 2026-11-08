@@ -209,3 +209,66 @@ test('status and model list expose the persisted snapshot', async () => {
   assert.equal(settings.provider, 'openrouter')
   assert.equal(settings.interval_hours, 24)
 })
+
+test('rankings cache: warm reads skip the network and a failed refresh keeps the snapshot', async () => {
+  const stateFile = tempStateFile()
+  const rankingsFile = path.join(path.dirname(stateFile), 'rankings.json')
+  const { context } = fakeContext()
+  const calls = []
+  const goodFetch = async (url) => {
+    const target = String(url)
+    calls.push(target)
+    if (target.includes('/rankings/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          { date: '2026-11-07 00:00:00', model_permaslug: 'vendor/paid-20260101', variant: 'standard', rankingMetricValue: 1_000_000_000_000, count: 100, change: 0.25 },
+          { date: '2026-11-07 00:00:00', model_permaslug: 'vendor/free-small-20260101', variant: 'standard', rankingMetricValue: 500_000_000_000, count: 50, change: -0.1 },
+          { date: '2026-11-06 00:00:00', model_permaslug: 'vendor/old-20260101', variant: 'standard', rankingMetricValue: 9, count: 9, change: 0 },
+        ],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    if (target.includes('/rankings/benchmarks')) {
+      return new Response(JSON.stringify({
+        data: {
+          aaData: {
+            intelligence: [{ permaslug: 'vendor/paid-20260101', aa_name: 'Paid', score: 70 }],
+            coding: [{ permaslug: 'vendor/paid-20260101', aa_name: 'Paid', score: 65 }],
+          },
+          valsIndex: { benchmark_version: 'aa-v2' },
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify(catalogPayload()), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+
+  const service = createCatalogService(context, { stateFile, rankingsFile, rankingsHours: 6 }, { fetchImpl: goodFetch, now: NOW })
+  await service.syncNow()
+
+  const first = await service.rankings()
+  assert.equal(first.cached, false)
+  assert.equal(first.usage.at, '2026-11-07 00:00:00')
+  assert.deepEqual(first.usage.models.map((row) => row.slug), ['vendor/paid-20260101', 'vendor/free-small-20260101'])
+  assert.equal(first.usage.models[0].name, 'Vendor: Paid')
+  assert.equal(first.benchmarks.benchmark_version, 'aa-v2')
+  assert.equal(first.benchmarks.models[0].coding, 65)
+
+  const rankingCalls = () => calls.filter((url) => url.includes('/rankings/')).length
+  const afterFirst = rankingCalls()
+  const warm = await service.rankings()
+  assert.equal(warm.cached, true)
+  assert.equal(rankingCalls(), afterFirst, 'a warm cache must not hit the network')
+
+  const forced = await service.rankings({ refresh: true })
+  assert.equal(forced.cached, false)
+  assert.equal(rankingCalls(), afterFirst + 2)
+
+  const broken = createCatalogService(context, { stateFile, rankingsFile, rankingsHours: 6 }, {
+    fetchImpl: async () => new Response('{"error":"down"}', { status: 500 }),
+    now: () => new Date('2026-11-08T20:00:00.000Z'),
+  })
+  const stale = await broken.rankings()
+  assert.equal(stale.stale, true)
+  assert.equal(stale.cached, true)
+  assert.equal(stale.usage.models[0].slug, 'vendor/paid-20260101')
+  assert.match(stale.error, /HTTP 500/)
+})
