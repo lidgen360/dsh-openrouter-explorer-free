@@ -1,4 +1,4 @@
-const BASE = '/openrouter-models'
+const BASE = '/openrouter-explorer-free'
 const MAX_BODY_BYTES = 1_000_000
 
 function sendJson(res, status, payload) {
@@ -51,7 +51,7 @@ async function handle(service, req, res) {
   let path = '/'
   let query = new URLSearchParams()
   try {
-    const target = new URL(req.url || '/', 'http://openrouter-models.invalid')
+    const target = new URL(req.url || '/', 'http://openrouter-explorer-free.invalid')
     path = target.pathname.slice(BASE.length) || '/'
     query = target.searchParams
     const method = req.method || 'GET'

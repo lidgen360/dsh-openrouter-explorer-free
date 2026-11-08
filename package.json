@@ -1,7 +1,7 @@
 {
-  "name": "dsh-openrouter-models",
-  "version": "0.3.0",
-  "description": "OpenRouter model catalog for DeepSeek Harness: live prices, free models, discounts, 24h auto-refresh and one-click free-model auto-routing.",
+  "name": "dsh-openrouter-explorer-free",
+  "version": "0.4.0",
+  "description": "OpenRouter Explorer Free — a DeepSeek Harness plugin: model catalog with live prices, free models, discounts, 24h auto-refresh and one-click free-model auto-routing.",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -48,11 +48,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kvaziman85-dotcom/dsh-openrouter-models.git"
+    "url": "git+https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free.git"
   },
   "bugs": {
-    "url": "https://github.com/kvaziman85-dotcom/dsh-openrouter-models/issues"
+    "url": "https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free/issues"
   },
-  "homepage": "https://github.com/kvaziman85-dotcom/dsh-openrouter-models#readme",
+  "homepage": "https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free#readme",
   "author": "kvaziman85-dotcom"
 }

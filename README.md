@@ -1,4 +1,4 @@
-# dsh-openrouter-models
+# OpenRouter Explorer Free (dsh-openrouter-explorer-free)
 
 Плагин для [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): **вкладка «Модели OpenRouter»** в правой
 боковой панели — живой каталог моделей с ценой каждой, бесплатные модели, скидки, автообновление раз в 24 часа
@@ -20,7 +20,7 @@
 | **Цена в меню моделей** | Слот `conversation.input.model.label` показывает цену $/1M, «бесплатно» и скидку прямо в штатном селекторе модели |
 | **Журнал** | Последние события каталога в том же окне, с отметкой «прочитано» |
 
-История цен, журнал и настройки лежат в `$DSH_HOME/openrouter-models/state.json` (по умолчанию `~/.dsh/openrouter-models/state.json`).
+История цен, журнал и настройки лежат в `$DSH_HOME/openrouter-explorer-free/state.json` (по умолчанию `~/.dsh/openrouter-explorer-free/state.json`).
 Первый замер — базовая линия: события «новая модель» на нём не создаются, скидки появляются после второго замера.
 
 ## Установка
@@ -29,7 +29,7 @@
 
 ```sh
 # из папки, где лежит этот репозиторий
-dsh plugin --profile web add ./dsh-openrouter-models
+dsh plugin --profile web add ./dsh-openrouter-explorer-free
 ```
 
 Для Web-профиля из исходников харнеса (`pnpm dev:web`) — то же самое, но командой `pnpm dsh ...`.
@@ -41,7 +41,7 @@ dsh plugin --profile web add ./dsh-openrouter-models
 Удалить:
 
 ```sh
-dsh plugin --profile web remove dsh-openrouter-models
+dsh plugin --profile web remove dsh-openrouter-explorer-free
 ```
 
 ## Настройка
@@ -50,7 +50,7 @@ dsh plugin --profile web remove dsh-openrouter-models
 
 ```yaml
 - id: openrouter-models
-  name: dsh-openrouter-models
+  name: dsh-openrouter-explorer-free
   config:
     provider: openrouter            # id провайдера в llm-pi-ai
     providerEntryId: llm-pi-ai      # строка Loader, у которой правится каталог моделей
@@ -81,14 +81,14 @@ dsh plugin --profile web remove dsh-openrouter-models
 
 | Метод | Путь | Что отдаёт |
 |---|---|---|
-| GET | `/openrouter-models/status` | статус синка, тоталы, `next_sync_at` |
-| GET | `/openrouter-models/models` | `{ status, models }`, фильтры `q`, `free`, `discount`, `modality`, `sort`, `limit` |
-| GET | `/openrouter-models/events` | журнал событий, `limit`, `unread`, `type` |
-| GET | `/openrouter-models/settings` | действующие настройки |
-| POST | `/openrouter-models/events/read` | `{ all: true }` или `{ ids: [...] }` |
-| POST | `/openrouter-models/sync` | ручное обновление каталога |
-| POST | `/openrouter-models/auto-route` | `{ sessionId }` → пинг + включение модели + переключение сессии |
-| POST | `/openrouter-models/use-model` | `{ sessionId, model }` → включение модели в провайдер + переключение сессии |
+| GET | `/openrouter-explorer-free/status` | статус синка, тоталы, `next_sync_at` |
+| GET | `/openrouter-explorer-free/models` | `{ status, models }`, фильтры `q`, `free`, `discount`, `modality`, `sort`, `limit` |
+| GET | `/openrouter-explorer-free/events` | журнал событий, `limit`, `unread`, `type` |
+| GET | `/openrouter-explorer-free/settings` | действующие настройки |
+| POST | `/openrouter-explorer-free/events/read` | `{ all: true }` или `{ ids: [...] }` |
+| POST | `/openrouter-explorer-free/sync` | ручное обновление каталога |
+| POST | `/openrouter-explorer-free/auto-route` | `{ sessionId }` → пинг + включение модели + переключение сессии |
+| POST | `/openrouter-explorer-free/use-model` | `{ sessionId, model }` → включение модели в провайдер + переключение сессии |
 
 ## Структура
 
@@ -114,6 +114,37 @@ npm run check   # синтаксис + тесты
 Плагин не требует сборки: `lib/client.js` — самодостаточный browser-бандл в формате загрузчика клиентских
 модулей DSH (React и Cordis приходят из базовых модулей оболочки). После правки `lib/client.js` достаточно
 перезагрузить страницу (короткий путь — пересобрать профиль правкой `cordis.patch.yml`).
+
+## Универсальность: профили, ОС, версии
+
+Плагин — обычный DSH-бандл и не привязан к Web-профилю:
+
+| Профиль | Что работает |
+|---|---|
+| `web`, `desktop` | всё: каталог, вкладка, меню в композере, цены в селекторе, автороут |
+| `headless`, `sdk`, `acp` | каталог и планировщик 24 ч (история цен общая), HTTP-API и UI отсутствуют |
+
+Проверка матрицы профилей (безопасно: временный `DSH_HOME`, ваш профиль не трогается):
+
+```sh
+node scripts/test-profiles.mjs          # web, headless, sdk, acp → 4/4 PASS
+DSH_BIN=/path/to/dsh node scripts/test-profiles.mjs
+```
+
+Что проверяется на каждый профиль: профиль создаётся из шаблона → бандл ставится через `dsh plugin add` →
+строка `openrouter-explorer-free` присутствует в `--dump-config`. Плюс юнит-тест `tests/entry.test.mjs`
+доказывает, что host-плагин загружается **без** `webServer`.
+
+Ограничения по среде: Node ≥ 22 (в DSH — ≥ 24.9), macOS/Linux/Windows (CI гоняет юнит-тесты на всех трёх),
+`engines.dsh: >=0.2.0 <0.3.0` — совместимость с мажорной линейкой харнесса. Другие агентские харнессы
+(не DSH) не поддерживаются: плагин использует Cordis-сервисы DSH.
+
+## Языки
+
+UI мультиязычный: namespace `openrouterExplorer`, словари `ru` и `en`; активный язык берётся из
+locale-сервиса харнесса, для остальных локалей используется английский. Переводятся меню, вкладка, KPI,
+журнал, кнопки, подсказки и тосты. Добавить язык — дописать словарь в `MESSAGES` в `lib/client.js`
+(ключи общие). Сообщения HTTP-API остаются служебными (русский/английский), это внутренний транспорт.
 
 ## Ограничения
 

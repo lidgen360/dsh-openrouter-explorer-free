@@ -1,8 +1,8 @@
-# Bundle layer for dsh-openrouter-models.
+# Bundle layer for dsh-openrouter-explorer-free.
 # One row mounts both halves: index.js (host) and lib/client.js (right-sidebar tab).
 - insert:
-    - id: openrouter-models
-      name: dsh-openrouter-models
+    - id: openrouter-explorer-free
+      name: dsh-openrouter-explorer-free
       config:
         provider: openrouter
         intervalHours: 24
