@@ -9,3 +9,7 @@ coverage/
 
 # local handoff digests (not for GitHub)
 docs/CHAT-CURRENT-STATE.md
+
+# local handoff docs (not for GitHub)
+docs/CHAT-COMPACT.md
+docs/NEXT-CHAT.md
