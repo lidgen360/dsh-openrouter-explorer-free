@@ -19,6 +19,7 @@
 | **Бесплатные модели** | Модель считается бесплатной, только если **все** денежные компоненты цены равны нулю (токены, картинки, аудио, web_search); фильтр и KPI в интерфейсе |
 | **Скидки** | OpenRouter не отдаёт поле «скидка», поэтому цена сравнивается с **собственной** историей: предыдущий замер и максимум за 30 дней, порог 30%. Пишутся события «цена упала», «подорожала», «стала бесплатной», «исчезла», «скоро исчезнет» |
 | **«Едем на халяву»** | Бесплатные chat-модели сортируются по размеру контекста; до 6 кандидатов пингуются реальным `chat/completions` (батчами по 3); первая ответившая модель добавляется в `models` провайдера OpenRouter через `ctx.configEditor` и выбирается для текущей сессии |
+| **Баланс ключа** | Под кнопкой «Едем на халяву» — остаток по ключу OpenRouter (`GET /api/v1/credits`, только host-часть: ключ не уходит в браузер) и ссылка **«Пополнить»** на сайт `openrouter.ai/settings/credits`. Плагин платежи не обрабатывает — деньги идут только на сайте |
 | **Меню в композере** | Кнопка **«🛷 модели»** рядом с выбором модели раскрывает каталог: KPI, «Едем на халяву», поиск, фильтры и список моделей с ценами; клик по модели добавляет её в провайдера и переключает сессию |
 | **Цена в меню моделей** | Слот `conversation.input.model.label` показывает цену $/1M, «бесплатно» и скидку прямо в штатном селекторе модели |
 | **Журнал** | Последние события каталога в том же окне, с отметкой «прочитано» |
@@ -62,6 +63,7 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
     journalDays: 90                 # срок жизни журнала и замеров синка, дней
     rankingsHours: 6                # кэш рейтингов, часов
     rankingsLimit: 60               # строк в лидерборде
+    balanceSeconds: 60              # кэш баланса ключа, секунд (0 — всегда запрашивать)
     apiKeyRef: OPENROUTER_API_KEY   # ссылка на credential, НЕ сам ключ
     maxCandidates: 6                # сколько бесплатных моделей пинговать
     source: https://openrouter.ai/api/v1/models
@@ -92,6 +94,7 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
 | GET | `/openrouter-explorer-free/events` | журнал событий, `limit`, `unread`, `type` |
 | GET | `/openrouter-explorer-free/settings` | действующие настройки |
 | GET | `/openrouter-explorer-free/rankings` | лидерборд + бенчмарки (кэш `rankingsHours`; `?refresh=1` — принудительно) |
+| GET | `/openrouter-explorer-free/balance` | баланс ключа: `{ ok, remaining, total_credits, total_usage }` (кэш `balanceSeconds`; `?refresh=1`) |
 | POST | `/openrouter-explorer-free/events/read` | `{ all: true }` или `{ ids: [...] }` |
 | POST | `/openrouter-explorer-free/sync` | ручное обновление каталога |
 | POST | `/openrouter-explorer-free/auto-route` | `{ sessionId }` → пинг + включение модели + переключение сессии |
@@ -109,6 +112,7 @@ src/host/provider.js    включение модели в провайдера 
 src/host/api.js         HTTP-маршруты вкладки
 src/host/state.js       атомарная запись состояния
 src/host/rankings.js    рейтинги: usage-снапшот, AA-бенчмарки, склейка с каталогом
+src/host/balance.js     баланс ключа: /api/v1/credits без утечки ключа в браузер
 tests/                  node:test, без сети
 ```
 

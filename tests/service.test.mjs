@@ -272,3 +272,57 @@ test('rankings cache: warm reads skip the network and a failed refresh keeps the
   assert.equal(stale.usage.models[0].slug, 'vendor/paid-20260101')
   assert.match(stale.error, /HTTP 500/)
 })
+
+test('balance: /credits is cached, refresh is forced and a missing key is reported', async () => {
+  const stateFile = tempStateFile()
+  const { context } = fakeContext()
+  const calls = []
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), headers: init.headers || {} })
+    if (String(url).endsWith('/credits')) {
+      return new Response(JSON.stringify({ data: { total_credits: 20, total_usage: 7.5 } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify(catalogPayload()), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+
+  const service = createCatalogService(context, { stateFile, balanceSeconds: 60 }, {
+    fetchImpl,
+    now: NOW,
+    resolveApiKey: () => 'test-key',
+  })
+  const first = await service.balance()
+  assert.equal(first.ok, true)
+  assert.equal(first.total_credits, 20)
+  assert.equal(first.total_usage, 7.5)
+  assert.equal(first.remaining, 12.5)
+  assert.equal(first.cached, false)
+  assert.equal(calls[0].headers.authorization, 'Bearer test-key')
+
+  const creditsCalls = () => calls.filter((call) => call.url.endsWith('/credits')).length
+  assert.equal(creditsCalls(), 1)
+  const warm = await service.balance()
+  assert.equal(warm.cached, true)
+  assert.equal(creditsCalls(), 1, 'a warm balance must not hit the network')
+  const forced = await service.balance({ refresh: true })
+  assert.equal(forced.cached, false)
+  assert.equal(creditsCalls(), 2)
+
+  const noKey = createCatalogService(context, { stateFile }, { fetchImpl, now: NOW, resolveApiKey: () => '' })
+  const missing = await noKey.balance()
+  assert.equal(missing.ok, false)
+  assert.equal(missing.reason, 'no_key')
+  assert.match(missing.error, /OPENROUTER_API_KEY/)
+
+  const broken = createCatalogService(context, { stateFile }, {
+    fetchImpl: async () => new Response('{"error":"nope"}', { status: 401 }),
+    now: NOW,
+    resolveApiKey: () => 'bad-key',
+  })
+  const failed = await broken.balance()
+  assert.equal(failed.ok, false)
+  assert.equal(failed.reason, 'error')
+  assert.match(failed.error, /HTTP 401/)
+})

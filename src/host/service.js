@@ -8,6 +8,7 @@ import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, mark
 import { emptyState, readState, writeState, withStateLock } from './state.js'
 import { legacyStateFilePath, rankingsFilePath, stateFilePath } from './home.js'
 import { ensureProviderModel, ensureProviderRoute } from './provider.js'
+import { creditsUrl, normalizeCredits } from './balance.js'
 import {
   RANKINGS_SOURCES,
   catalogIndex,
@@ -49,6 +50,8 @@ export function normalizeConfig(raw = {}) {
     rankingsHours: clampNumber(raw.rankingsHours, 1, 24 * 30, 6),
     rankingsLimit: clampNumber(raw.rankingsLimit, 5, 200, 60),
     rankingsFile: raw.rankingsFile ? String(raw.rankingsFile) : undefined,
+    // Balance is small, read-only data: a short in-memory TTL (0 = always fetch).
+    balanceSeconds: clampNumber(raw.balanceSeconds, 0, 3_600, 60),
   }
 }
 
@@ -85,6 +88,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   // DSH_HOME, so every operation re-reads the file (under a lock when writing).
   let inflight = null
   let rankingsInflight = null
+  let balanceCache = null
   let timer = null
   let disposed = false
 
@@ -540,6 +544,58 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     return read()
   }
 
+  /**
+   * OpenRouter credit balance for the current API key. The key never leaves the
+   * host process. Results are cached for `balanceSeconds`; a missing key or a
+   * failed request returns `ok: false` with a reason instead of throwing.
+   */
+  async function balance(input = {}) {
+    const force = input?.refresh === true || input?.refresh === '1' || input?.refresh === 'true'
+    const nowMs = clock().getTime()
+    const ttlMs = settings.balanceSeconds * 1_000
+    if (!force && balanceCache && nowMs - balanceCache.atMs < ttlMs) {
+      return { ...balanceCache.value, cached: true }
+    }
+    const key = await resolveApiKey()
+    if (!key.value) {
+      const value = {
+        ok: false,
+        reason: 'no_key',
+        error: `Нет ключа OpenRouter (${settings.apiKeyRef}) — баланс недоступен`,
+        at: nowIso(),
+      }
+      balanceCache = { atMs: nowMs, value }
+      return { ...value, cached: false }
+    }
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), settings.syncTimeoutMs)
+    try {
+      const response = await fetchImpl(creditsUrl(settings.baseURL), {
+        headers: { accept: 'application/json', authorization: `Bearer ${key.value}` },
+        signal: controller.signal,
+      })
+      const text = await response.text()
+      if (!response.ok) throw new Error(`OpenRouter: HTTP ${response.status} — ${String(text).slice(0, 200)}`)
+      let payload = null
+      try {
+        payload = JSON.parse(text)
+      } catch {
+        throw new Error('OpenRouter: ответ не является JSON')
+      }
+      const value = { ok: true, ...normalizeCredits(payload), source: key.source, at: nowIso() }
+      balanceCache = { atMs: nowMs, value }
+      return { ...value, cached: false }
+    } catch (error) {
+      const message = error?.name === 'AbortError'
+        ? `OpenRouter: таймаут ${Math.round(settings.syncTimeoutMs / 1000)} с`
+        : String(error?.message || error)
+      // Failures are not cached: the next poll retries the request.
+      return { ok: false, reason: 'error', error: message, at: nowIso(), cached: false }
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
   async function settingsView() {
     return {
       provider: settings.provider,
@@ -556,6 +612,8 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       rankings_hours: settings.rankingsHours,
       rankings_limit: settings.rankingsLimit,
       rankings_file: rankingsFile,
+      balance_seconds: settings.balanceSeconds,
+      credits_url: creditsUrl(settings.baseURL),
     }
   }
 
@@ -607,6 +665,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     events,
     readEvents,
     rankings,
+    balance,
     syncNow,
     autoRoute,
     useModel,

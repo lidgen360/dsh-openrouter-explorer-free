@@ -82,6 +82,9 @@ async function handle(service, req, res) {
     if (method === 'GET' && path === '/rankings') {
       return sendJson(res, 200, await service.rankings({ refresh: query.get('refresh') }))
     }
+    if (method === 'GET' && path === '/balance') {
+      return sendJson(res, 200, await service.balance({ refresh: query.get('refresh') }))
+    }
     if (method === 'POST' && path === '/events/read') {
       return sendJson(res, 200, await service.readEvents(await readBody(req)))
     }
