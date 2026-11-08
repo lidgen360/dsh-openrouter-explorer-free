@@ -217,3 +217,36 @@ test('removed models are pruned after the 90-day grace period', async () => {
   assert.equal(data.models.some((model) => model.id === 'vendor/gone'), false)
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('legacy state directory is migrated once and then written to the new path', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'orx-home-'))
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  const legacy = path.join(home, 'openrouter-models', 'state.json')
+  fs.mkdirSync(path.dirname(legacy), { recursive: true })
+  const clock = { t: 3 }
+  const at = new Date(BASE + 3 * DAY).toISOString()
+  fs.writeFileSync(legacy, JSON.stringify({
+    schema_version: 1,
+    samples: 1,
+    synced_at: at,
+    next_sync_at: new Date(BASE + 10 * DAY).toISOString(),
+    models: [],
+    events: [],
+    syncs: [],
+  }))
+  const service = createCatalogService({ logger: { info() {}, warn() {} }, get: () => undefined }, { intervalHours: 24 }, {
+    fetchImpl: async () => new Response(JSON.stringify(catalogOf([rawModel('vendor/a')])), { status: 200 }),
+    now: () => new Date(BASE + clock.t * DAY),
+  })
+
+  await service.syncNow()
+
+  const fresh = path.join(home, 'openrouter-explorer-free', 'state.json')
+  assert.equal(fs.existsSync(fresh), true, 'new path is written after migration')
+  const data = JSON.parse(fs.readFileSync(fresh, 'utf8'))
+  assert.equal(data.samples, 2, 'legacy history was carried over')
+  process.env.DSH_HOME = previousHome
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  fs.rmSync(home, { recursive: true, force: true })
+})

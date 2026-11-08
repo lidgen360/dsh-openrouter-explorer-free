@@ -65,6 +65,7 @@ export async function writeState(file, data) {
  * @returns {Promise<T>}
  */
 export async function withStateLock(file, operation, { timeoutMs = 5_000, staleMs = 30_000 } = {}) {
+  await fs.mkdir(path.dirname(file), { recursive: true })
   const lock = `${file}.lock`
   const startedAt = Date.now()
   for (;;) {

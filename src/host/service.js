@@ -6,7 +6,7 @@
 import crypto from 'node:crypto'
 import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
 import { emptyState, readState, writeState, withStateLock } from './state.js'
-import { stateFilePath } from './home.js'
+import { legacyStateFilePath, stateFilePath } from './home.js'
 import { ensureProviderModel, ensureProviderRoute } from './provider.js'
 
 const DEFAULT_SOURCE = 'https://openrouter.ai/api/v1/models'
@@ -84,7 +84,9 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   const nowIso = () => clock().toISOString()
 
   async function ensureState() {
-    const stored = await readState(file)
+    // One-time migration from the pre-0.4.0 state directory; the next write
+    // lands on the new path, so the legacy file becomes stale on purpose.
+    const stored = (await readState(file)) || (settings.stateFile ? null : await readState(legacyStateFilePath()))
     return stored || emptyState({
       source: settings.source,
       interval_hours: settings.intervalHours,
