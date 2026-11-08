@@ -101,6 +101,13 @@ async function handle(service, req, res) {
       const result = await service.autoRoute({ sessionId })
       return sendJson(res, result?.ok ? 200 : 400, result)
     }
+    if (method === 'POST' && path === '/use-model') {
+      const body = await readBody(req)
+      const sessionId = String(body?.sessionId || '').trim() || requestSessionHint(req)
+      if (!sessionId) return sendJson(res, 400, { ok: false, error: 'не передан id сессии' })
+      const result = await service.useModel({ sessionId, modelId: body?.model || body?.modelId })
+      return sendJson(res, result?.ok ? 200 : 400, result)
+    }
     return sendJson(res, 404, { error: `Не найдено: ${method} ${path}` })
   } catch (error) {
     console.error('[openrouter-models] request failed', req?.method, req?.url, error)

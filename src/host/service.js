@@ -291,6 +291,44 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   }
 
   /**
+   * Route one catalog model into the current session: enable it on the
+   * provider route when missing, then apply the selection. Used by the
+   * composer's catalog menu (no ping, no free-model filtering).
+   */
+  async function useModel(input = {}) {
+    const modelId = String(input?.modelId || input?.model || '').trim()
+    if (!modelId) return { ok: false, error: 'не передана модель' }
+    const current = await ensureState()
+    const model = (Array.isArray(current.models) ? current.models : [])
+      .find((item) => item?.id === modelId && item.status !== 'removed')
+    if (!model) return { ok: false, error: `модель «${modelId}» не найдена в каталоге` }
+    try {
+      const { changed } = await ensureProviderModel(ctx, {
+        provider: settings.provider,
+        entryId: settings.providerEntryId,
+        model,
+      })
+      await selectSessionModel(input.sessionId, settings.provider, modelId)
+      log(`модель выбрана вручную: ${modelId}${changed ? ' (добавлена в провайдер)' : ''}`)
+      return {
+        ok: true,
+        provider: settings.provider,
+        config_changed: changed,
+        model: {
+          id: model.id,
+          name: model.name,
+          context_length: model.context_length ?? null,
+          is_free: !!model.is_free,
+          prompt_usd_per_1m: model.prompt_usd_per_1m,
+          completion_usd_per_1m: model.completion_usd_per_1m,
+        },
+      }
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error) }
+    }
+  }
+
+  /**
    * «Едем на халяву»: take free chat models ordered by context window, ping
    * them until one answers, enable that model on the harness OpenRouter route
    * when needed, and switch the current session to it.
@@ -447,6 +485,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     readEvents,
     syncNow,
     autoRoute,
+    useModel,
     _internals: { settings, file },
   }
 }
