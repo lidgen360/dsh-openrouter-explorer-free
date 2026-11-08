@@ -265,15 +265,29 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     }
   }
 
+  /** Wait for a live agent whose model controller is installed. */
+  async function waitForAgent(sessionId, timeoutMs = 2_500) {
+    const agents = ctx?.get?.('agents')
+    if (!agents) throw new Error('в этом профиле нет реестра агентов')
+    const startedAt = Date.now()
+    let agent = agents.get(sessionId)
+    while ((!agent || !agent.model) && Date.now() - startedAt < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      agent = agents.get(sessionId)
+    }
+    if (!agent) throw new Error(`сессия ${sessionId} не найдена`)
+    if (!agent.model || typeof agent.model.select !== 'function') {
+      throw new Error('агент сессии ещё не готов — повторите через секунду')
+    }
+    return agent
+  }
+
   async function selectSessionModel(sessionId, provider, model) {
     const llm = ctx?.get?.('llm')
-    const agents = ctx?.get?.('agents')
     if (!llm) throw new Error('в этом профиле нет LLM-сервиса')
-    if (!agents) throw new Error('в этом профиле нет реестра агентов')
     if (!sessionId) throw new Error('не передан id сессии')
     await llm.resolveCallConfig({ provider, model })
-    const agent = agents.get(sessionId)
-    if (!agent) throw new Error(`сессия ${sessionId} не найдена`)
+    const agent = await waitForAgent(sessionId)
     agent.model.select({ provider, model })
   }
 

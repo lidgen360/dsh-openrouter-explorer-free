@@ -7,6 +7,8 @@
 
 ![Вкладка «Модели OpenRouter»](docs/screenshot.jpg)
 
+![Меню «Модели OpenRouter» в композере](docs/menu.jpg)
+
 ## Что внутри
 
 | Возможность | Как работает |
