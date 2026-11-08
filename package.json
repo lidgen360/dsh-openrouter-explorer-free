@@ -1,0 +1,58 @@
+{
+  "name": "dsh-openrouter-models",
+  "version": "0.1.0",
+  "description": "OpenRouter model catalog for DeepSeek Harness: live prices, free models, discounts, 24h auto-refresh and one-click free-model auto-routing.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "openrouter",
+    "models",
+    "pricing",
+    "agent-harness"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/client.js",
+    "src/",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/screenshot.jpg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0 <0.3.0",
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "check": "node --check index.js && node --check lib/client.js && node --test tests/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvaziman85-dotcom/dsh-openrouter-models.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kvaziman85-dotcom/dsh-openrouter-models/issues"
+  },
+  "homepage": "https://github.com/kvaziman85-dotcom/dsh-openrouter-models#readme",
+  "author": "kvaziman85-dotcom"
+}

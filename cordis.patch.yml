@@ -1,0 +1,11 @@
+# Bundle layer for dsh-openrouter-models.
+# One row mounts both halves: index.js (host) and lib/client.js (right-sidebar tab).
+- insert:
+    - id: openrouter-models
+      name: dsh-openrouter-models
+      config:
+        provider: openrouter
+        intervalHours: 24
+        discountPct: 30
+        apiKeyRef: OPENROUTER_API_KEY
+        tool: false
