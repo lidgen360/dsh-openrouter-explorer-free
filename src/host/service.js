@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
 import { emptyState, readState, writeState } from './state.js'
 import { stateFilePath } from './home.js'
-import { ensureProviderModel } from './provider.js'
+import { ensureProviderModel, ensureProviderRoute } from './provider.js'
 
 const DEFAULT_SOURCE = 'https://openrouter.ai/api/v1/models'
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
@@ -34,6 +34,7 @@ export function normalizeConfig(raw = {}) {
     maxCandidates: clampNumber(raw.maxCandidates, 1, 12, 6),
     pingTimeoutMs: clampNumber(raw.pingTimeoutMs, 3_000, 60_000, 20_000),
     syncTimeoutMs: clampNumber(raw.syncTimeoutMs, 5_000, 120_000, 30_000),
+    autoProvision: raw.autoProvision !== false,
     stateFile: raw.stateFile ? String(raw.stateFile) : undefined,
   }
 }
@@ -462,6 +463,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       base_url: settings.baseURL,
       api_key_ref: settings.apiKeyRef,
       max_candidates: settings.maxCandidates,
+      auto_provision: settings.autoProvision,
       state_file: file,
     }
   }
@@ -479,6 +481,22 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     void (async () => {
       try {
         await ensureState()
+        // Connect the OpenRouter route from the credential reference when the
+        // profile has none. Never selects a model, never changes the default.
+        if (settings.autoProvision) {
+          try {
+            const provisioned = await ensureProviderRoute(ctx, {
+              provider: settings.provider,
+              entryId: settings.providerEntryId,
+              apiKeyRef: settings.apiKeyRef,
+              baseURL: settings.baseURL,
+            })
+            if (provisioned.created) log(`провайдер «${settings.provider}» подключён (ключ из credentials)`)
+            else if (provisioned.reason) log(`провайдер «${settings.provider}» не подключён: ${provisioned.reason}`)
+          } catch (error) {
+            log(`не удалось подключить провайдера: ${error?.message || error}`)
+          }
+        }
         if (isDue()) await syncNow()
       } catch (error) {
         log(`стартовая синхронизация не удалась: ${error?.message || error}`)

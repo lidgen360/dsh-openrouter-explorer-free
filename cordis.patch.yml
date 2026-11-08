@@ -8,4 +8,5 @@
         intervalHours: 24
         discountPct: 30
         apiKeyRef: OPENROUTER_API_KEY
+        autoProvision: true
         tool: false

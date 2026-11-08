@@ -1,6 +1,6 @@
 {
   "name": "dsh-openrouter-models",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "OpenRouter model catalog for DeepSeek Harness: live prices, free models, discounts, 24h auto-refresh and one-click free-model auto-routing.",
   "keywords": [
     "deepseek-harness",
