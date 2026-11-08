@@ -32,15 +32,10 @@ node --check index.js && node --check lib/client.js
 <!-- tokenguard:guard -->
 ## Экономия контекста (tokenguard)
 
-- Если в запросе есть маркер `[tokenguard-drift]` — **первым блоком ответа** выведи
-  `⚠️ tokenguard: смена темы (N) — создать новый чат?`, затем **спроси пользователя через
-  интерактивный вопрос** (Да/Нет): «Создать новый чат с переносом контекста?».
-- Если пользователь ответил **Да**: обнови конспект (`tokenguard chats digest <session>` и
-  `tokenguard chats compact <session> --keep-last 8 --out docs/CHAT-COMPACT.md`) и создай новый чат
-  автоматически: `node bin/tokenguard-dsh-new-chat.js --prompt "Прочитай docs/CHAT-COMPACT.md ..."`
-  (Safari AppleScript: нажимает «Новая сессия», вставляет перенос и отправляет — ничего вручную).
-- Без маркера, перед продолжением длинного чата (≥10 сообщений): `tokenguard chats drift --json`.
-- Маркер вкладывает хук DSH (`bin/tokenguard-dsh-hook.js` через `dsh-hooks-claude-code`) — агент
-  обязан его отработать, а не пропустить.
+- **Новый чат не предлагать.** Хук `[tokenguard-drift]` по умолчанию выключен
+  (`{"driftHook": false}` в `~/.tokenguard/config.json` или `TOKENGUARD_DRIFT_HOOK=0`).
+  Если маркер всё же пришёл — учти его, но **не спрашивай** про новый чат и не создавай его.
+- `tokenguard chats drift` / `digest` / `compact` — только по просьбе пользователя или при явной
+  смене темы; без настойчивых предложений и автосоздания чатов.
 - Лимиты бюджета не используются: не запускай и не предлагай `tokenguard budget`.
 <!-- /tokenguard:guard -->
