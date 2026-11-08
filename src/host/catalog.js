@@ -22,6 +22,7 @@ export const LIMITS = {
   expiringDays: 7,
   noisePct: 0.5,
   hotDropPct: 50,
+  journalDays: 90,
 }
 
 const DAY_MS = 86_400_000
@@ -106,6 +107,8 @@ export function normalizeModel(raw, { at, expiringDays = LIMITS.expiringDays } =
     base_id: variantBaseId(id),
     variant_saving_pct: null,
     expiration_date: expiration,
+    /** When this model's "expiring soon" event was emitted; survives event eviction. */
+    expiry_event_at: null,
     expiring_soon: Number.isFinite(expiresIn) && expiresIn <= expiringDays * DAY_MS,
     is_alias: id.startsWith('~'),
     hugging_face_id: raw?.hugging_face_id ? String(raw.hugging_face_id) : null,
@@ -258,16 +261,19 @@ function countNew7d(models) {
  * @returns summary of the sample
  */
 export function applyCatalog(data, apiModels, peer) {
-  const { at, threshold, intervalHours, startedAt, source } = peer
+  const { at, threshold, intervalHours, startedAt, source, journalDays = LIMITS.journalDays } = peer
   const baseline = !Number(data.samples)
   const nowMs = Date.parse(at)
   data.source = source || data.source
   data.interval_hours = intervalHours
   data.discount_threshold_pct = threshold
 
-  const expiringNotified = new Set(
-    (Array.isArray(data.events) ? data.events : []).filter((event) => event?.type === 'expiring').map((event) => event.model_id),
-  )
+  // Legacy states predate `expiry_event_at`: derive the marker from the journal
+  // once, so an upgrade never re-announces the same expiration.
+  const legacyExpiring = new Map()
+  for (const event of Array.isArray(data.events) ? data.events : []) {
+    if (event?.type === 'expiring' && event.model_id) legacyExpiring.set(event.model_id, event.at)
+  }
   const prior = Array.isArray(data.models) ? data.models.filter((model) => model?.id) : []
   const priorActive = new Map()
   for (const model of prior) if (model.status !== 'removed') priorActive.set(model.id, model)
@@ -301,6 +307,8 @@ export function applyCatalog(data, apiModels, peer) {
     while (history.length > LIMITS.historyPoints) history.shift()
     model.price_history = history
     model.high_30d = computeHigh(history, nowMs)
+
+    model.expiry_event_at = prev?.expiry_event_at || legacyExpiring.get(model.id) || null
 
     if (baseline) {
       model.prev = null
@@ -367,8 +375,9 @@ export function applyCatalog(data, apiModels, peer) {
       ? null
       : computeDiscount({ prev, highBefore, model, threshold, at, previousDiscount: prev?.discount || null })
 
-    if (model.expiring_soon && !expiringNotified.has(model.id)) {
-      expiringNotified.add(model.id)
+    const expiryChanged = !!prev && prev.expiration_date !== model.expiration_date
+    if (model.expiring_soon && (!model.expiry_event_at || expiryChanged)) {
+      model.expiry_event_at = at
       events.push(makeEvent({
         at, type: 'expiring', severity: 'warn', model,
         title: `Модель скоро исчезнет из каталога: ${model.name}`,
@@ -444,8 +453,29 @@ export function applyCatalog(data, apiModels, peer) {
     },
     ...(Array.isArray(data.syncs) ? data.syncs : []),
   ].slice(0, LIMITS.maxSyncs)
+  data.journal_days = journalDays
   data.events = [...events, ...(Array.isArray(data.events) ? data.events : [])].slice(0, LIMITS.maxEvents)
+  pruneJournal(data, at, journalDays)
   return summary
+}
+
+/** Drop journal entries (and sync samples) older than the retention window. */
+export function pruneJournal(data, nowIso, days = LIMITS.journalDays) {
+  const keepMs = Math.max(1, Number(days) || LIMITS.journalDays) * DAY_MS
+  const nowMs = Date.parse(nowIso)
+  if (!Number.isFinite(nowMs)) return 0
+  const cutoff = nowMs - keepMs
+  const before = Array.isArray(data.events) ? data.events : []
+  data.events = before.filter((event) => {
+    const time = Date.parse(event?.at || '')
+    return Number.isFinite(time) && time >= cutoff
+  })
+  const syncs = Array.isArray(data.syncs) ? data.syncs : []
+  data.syncs = syncs.filter((entry) => {
+    const time = Date.parse(entry?.at || '')
+    return Number.isFinite(time) && time >= cutoff
+  }).slice(0, LIMITS.maxSyncs)
+  return before.length - data.events.length
 }
 
 /** Lightweight sync status for the tab header. */
@@ -479,6 +509,16 @@ export function buildStatus(data, { inFlight = false, settings = {} } = {}) {
       overrides: active.filter((model) => model.has_overrides).length,
       new_7d: countNew7d(active),
       unread_events: events.filter((event) => event && !event.read).length,
+    },
+    journal: {
+      events: events.length,
+      unread: events.filter((event) => event && !event.read).length,
+      oldest_at: events.reduce((oldest, event) => {
+        const time = Date.parse(event?.at || '')
+        if (!Number.isFinite(time)) return oldest
+        return oldest === null || time < Date.parse(oldest) ? event.at : oldest
+      }, null),
+      retention_days: Number(data?.journal_days) || Number(settings.journalDays) || LIMITS.journalDays,
     },
   }
 }

@@ -7,6 +7,7 @@
         provider: openrouter
         intervalHours: 24
         discountPct: 30
+        journalDays: 90
         apiKeyRef: OPENROUTER_API_KEY
         autoProvision: true
         tool: false

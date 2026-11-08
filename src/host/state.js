@@ -51,3 +51,44 @@ export async function writeState(file, data) {
     throw error
   }
 }
+
+/**
+ * Serialize one read-modify-write cycle across processes: several DSH profiles
+ * can share one DSH_HOME (Web GUI + headless CLI), so an in-memory snapshot is
+ * never authoritative. The lock is a directory next to the state file; stale
+ * locks (crashed process) are reaped after `staleMs`.
+ *
+ * @template T
+ * @param {string} file state file path
+ * @param {() => Promise<T>} operation work performed while holding the lock
+ * @param {{ timeoutMs?: number, staleMs?: number }} [options]
+ * @returns {Promise<T>}
+ */
+export async function withStateLock(file, operation, { timeoutMs = 5_000, staleMs = 30_000 } = {}) {
+  const lock = `${file}.lock`
+  const startedAt = Date.now()
+  for (;;) {
+    try {
+      await fs.mkdir(lock, { recursive: false })
+      break
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      try {
+        const stat = await fs.stat(lock)
+        if (Date.now() - stat.mtimeMs > staleMs) {
+          await fs.rm(lock, { recursive: true, force: true })
+          continue
+        }
+      } catch {
+        /* the owner released it between mkdir and stat */
+      }
+      if (Date.now() - startedAt > timeoutMs) throw new Error('состояние каталога занято другим процессом — повторите позже')
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+  }
+  try {
+    return await operation()
+  } finally {
+    await fs.rm(lock, { recursive: true, force: true }).catch(() => {})
+  }
+}

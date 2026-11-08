@@ -5,7 +5,7 @@
  */
 import crypto from 'node:crypto'
 import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
-import { emptyState, readState, writeState } from './state.js'
+import { emptyState, readState, writeState, withStateLock } from './state.js'
 import { stateFilePath } from './home.js'
 import { ensureProviderModel, ensureProviderRoute } from './provider.js'
 
@@ -34,6 +34,7 @@ export function normalizeConfig(raw = {}) {
     maxCandidates: clampNumber(raw.maxCandidates, 1, 12, 6),
     pingTimeoutMs: clampNumber(raw.pingTimeoutMs, 3_000, 60_000, 20_000),
     syncTimeoutMs: clampNumber(raw.syncTimeoutMs, 5_000, 120_000, 30_000),
+    journalDays: clampNumber(raw.journalDays, 1, 3_650, 90),
     autoProvision: raw.autoProvision !== false,
     stateFile: raw.stateFile ? String(raw.stateFile) : undefined,
   }
@@ -67,8 +68,8 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   const file = settings.stateFile || stateFilePath()
   const logger = ctx?.logger
 
-  let data = null
-  let loading = null
+  // No long-lived in-memory snapshot: several DSH profiles may share one
+  // DSH_HOME, so every operation re-reads the file (under a lock when writing).
   let inflight = null
   let timer = null
   let disposed = false
@@ -83,23 +84,13 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   const nowIso = () => clock().toISOString()
 
   async function ensureState() {
-    if (data) return data
-    if (!loading) {
-      loading = (async () => {
-        const stored = await readState(file)
-        data = stored || emptyState({
-          source: settings.source,
-          interval_hours: settings.intervalHours,
-          discount_threshold_pct: settings.discountPct,
-        })
-        return data
-      })()
-    }
-    return loading
-  }
-
-  async function save() {
-    await writeState(file, data)
+    const stored = await readState(file)
+    return stored || emptyState({
+      source: settings.source,
+      interval_hours: settings.intervalHours,
+      discount_threshold_pct: settings.discountPct,
+      journal_days: settings.journalDays,
+    })
   }
 
   async function fetchCatalog() {
@@ -126,8 +117,9 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   }
 
   async function recordFailure(error, at, startedAt) {
-    const current = await ensureState()
-    const firstInSeries = !Number(current.failures)
+    return withStateLock(file, async () => {
+      const current = await ensureState()
+      const firstInSeries = !Number(current.failures)
     current.failures = (Number(current.failures) || 0) + 1
     current.attempted_at = at
     current.last_error = String(error?.message || 'Не удалось обновить каталог').slice(0, 500)
@@ -150,7 +142,8 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       },
       ...(Array.isArray(current.syncs) ? current.syncs : []),
     ].slice(0, LIMITS.maxSyncs)
-    await save()
+      await writeState(file, current)
+    })
   }
 
   async function runSync() {
@@ -163,17 +156,21 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       await recordFailure(error, at, startedAt)
       throw error
     }
-    const current = await ensureState()
-    const summary = applyCatalog(current, apiModels, {
-      at,
-      threshold: settings.discountPct,
-      intervalHours: settings.intervalHours,
-      startedAt,
-      source: settings.source,
+    return withStateLock(file, async () => {
+      const current = await ensureState()
+      const summary = applyCatalog(current, apiModels, {
+        at,
+        threshold: settings.discountPct,
+        intervalHours: settings.intervalHours,
+        startedAt,
+        source: settings.source,
+        journalDays: settings.journalDays,
+      })
+      current.journal_days = settings.journalDays
+      await writeState(file, current)
+      log(`каталог обновлён: ${summary.total} моделей, бесплатных ${summary.free}, событий ${summary.events}`)
+      return summary
     })
-    await save()
-    log(`каталог обновлён: ${summary.total} моделей, бесплатных ${summary.free}, событий ${summary.events}`)
-    return summary
   }
 
   /** Single-flight refresh; the second caller joins the first request. */
@@ -188,16 +185,21 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     return started
   }
 
-  function isDue() {
-    const next = Date.parse(data?.next_sync_at || '')
-    if (!data?.synced_at || !Number.isFinite(next)) return true
+  function isDue(state) {
+    const next = Date.parse(state?.next_sync_at || '')
+    if (!state?.synced_at || !Number.isFinite(next)) return true
     return next <= clock().getTime()
   }
 
-  function scheduleNext() {
+  async function scheduleNext() {
     if (disposed) return
     clearTimeout(timer)
-    const next = Date.parse(data?.next_sync_at || '')
+    let next = NaN
+    try {
+      next = Date.parse((await ensureState()).next_sync_at || '')
+    } catch {
+      /* a transient read failure retries at once */
+    }
     const delay = Number.isFinite(next) ? Math.max(0, next - clock().getTime()) : 0
     timer = setTimeout(() => {
       void tick()
@@ -208,12 +210,12 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   async function tick() {
     if (disposed) return
     try {
-      await ensureState()
-      if (isDue()) await syncNow()
+      const current = await ensureState()
+      if (isDue(current)) await syncNow()
     } catch (error) {
       log(`автосинхронизация не удалась: ${error?.message || error}`)
     } finally {
-      scheduleNext()
+      await scheduleNext()
     }
   }
 
@@ -429,28 +431,30 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   }
 
   async function status() {
-    await ensureState()
-    return buildStatus(data, {
+    const current = await ensureState()
+    return buildStatus(current, {
       inFlight: !!inflight,
-      settings: { intervalHours: settings.intervalHours, discountPct: settings.discountPct, source: settings.source },
+      settings: { intervalHours: settings.intervalHours, discountPct: settings.discountPct, journalDays: settings.journalDays, source: settings.source },
     })
   }
 
   async function models(filters = {}) {
-    await ensureState()
-    return listModels(data, filters)
+    const current = await ensureState()
+    return listModels(current, filters)
   }
 
   async function events(filters = {}) {
-    await ensureState()
-    return listEvents(data, filters)
+    const current = await ensureState()
+    return listEvents(current, filters)
   }
 
   async function readEvents(input = {}) {
-    const current = await ensureState()
-    const result = markEventsRead(current, input)
-    if (result.marked > 0) await save()
-    return result
+    return withStateLock(file, async () => {
+      const current = await ensureState()
+      const result = markEventsRead(current, input)
+      if (result.marked > 0) await writeState(file, current)
+      return result
+    })
   }
 
   async function settingsView() {
@@ -463,6 +467,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       base_url: settings.baseURL,
       api_key_ref: settings.apiKeyRef,
       max_candidates: settings.maxCandidates,
+      journal_days: settings.journalDays,
       auto_provision: settings.autoProvision,
       state_file: file,
     }
@@ -480,7 +485,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     started = true
     void (async () => {
       try {
-        await ensureState()
+        const state = await ensureState()
         // Connect the OpenRouter route from the credential reference when the
         // profile has none. Never selects a model, never changes the default.
         if (settings.autoProvision) {
@@ -497,11 +502,11 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
             log(`не удалось подключить провайдера: ${error?.message || error}`)
           }
         }
-        if (isDue()) await syncNow()
+        if (isDue(state)) await syncNow()
       } catch (error) {
         log(`стартовая синхронизация не удалась: ${error?.message || error}`)
       } finally {
-        scheduleNext()
+        await scheduleNext()
       }
     })()
     return stop
