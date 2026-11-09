@@ -27,7 +27,7 @@ node --check index.js && node --check lib/client.js
 
 ## Версия
 
-Источник — `version` в `package.json` (сейчас `0.6.1`); синхронизировать с `CHANGELOG.md`.
+Источник — `version` в `package.json` (сейчас `0.6.2`); синхронизировать с `CHANGELOG.md`.
 
 <!-- tokenguard:guard -->
 ## Экономия контекста (tokenguard)
