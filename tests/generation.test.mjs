@@ -120,7 +120,7 @@ test('parseVideoResponse normalizes submit and poll payloads', () => {
 
 test('model listings are compact and drop junk', () => {
   assert.deepEqual(normalizeImageModels({ data: [{ id: 'a', name: 'A' }, null, {}] }), [
-    { id: 'a', name: 'A', description: '' },
+    { id: 'a', name: 'A', description: '', is_free: null, free_known: false },
   ])
   const video = normalizeVideoModels({
     data: [{
@@ -137,7 +137,7 @@ test('model listings are compact and drop junk', () => {
   assert.deepEqual(video[0].durations, [4, 8])
   assert.equal(video[0].generate_audio, true)
   assert.deepEqual(normalizeSpeechModels({ data: [{ id: 'tts/a', name: 'TTS A' }] }), [
-    { id: 'tts/a', name: 'TTS A', description: '' },
+    { id: 'tts/a', name: 'TTS A', description: '', pricing: {}, is_free: false, free_known: true },
   ])
 })
 
@@ -160,4 +160,25 @@ test('media types, extensions and file names stay inside the generated dir', () 
   assert.equal(safeFileName('..\\..\\secret.txt'), 'secret.txt')
   assert.equal(safeFileName('a b/c?.png'), 'c_.png')
   assert.equal(safeFileName(''), 'file.bin')
+})
+
+
+test('free models are detected from pricing; image lists stay unknown', () => {
+  const speech = normalizeSpeechModels({
+    data: [
+      { id: 'tts/free', pricing: { prompt: '0', completion: '0' } },
+      { id: 'tts/paid', pricing: { prompt: '0.000015', completion: '0' } },
+    ],
+  })
+  assert.equal(speech[0].is_free, true)
+  assert.equal(speech[0].free_known, true)
+  assert.equal(speech[1].is_free, false)
+
+  const video = normalizeVideoModels({ data: [{ id: 'v', pricing_skus: { duration_seconds_720p: '0' } }] })
+  assert.equal(video[0].is_free, true)
+  assert.equal(video[0].free_known, true)
+
+  const image = normalizeImageModels({ data: [{ id: 'i', name: 'I' }] })
+  assert.equal(image[0].is_free, null)
+  assert.equal(image[0].free_known, false)
 })

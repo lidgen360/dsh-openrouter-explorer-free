@@ -163,6 +163,13 @@ export function parseVideoResponse(raw) {
   }
 }
 
+/** A pricing object is free when it exists and every component is zero. */
+function priceIsFree(pricing) {
+  if (!pricing || typeof pricing !== 'object') return false
+  const values = Object.values(pricing).map(Number).filter(Number.isFinite)
+  return values.length > 0 && values.every((value) => value === 0)
+}
+
 /** `GET /images/models` → compact listing. */
 export function normalizeImageModels(raw) {
   return (Array.isArray(raw?.data) ? raw.data : [])
@@ -171,6 +178,9 @@ export function normalizeImageModels(raw) {
       id: String(model.id),
       name: String(model.name || model.id),
       description: String(model.description || ''),
+      // Image pricing lives on /images/models/{id}/endpoints, not in this list.
+      is_free: null,
+      free_known: false,
     }))
 }
 
@@ -187,6 +197,8 @@ export function normalizeVideoModels(raw) {
       durations: Array.isArray(model.supported_durations) ? model.supported_durations.map(Number) : [],
       aspect_ratios: Array.isArray(model.supported_aspect_ratios) ? model.supported_aspect_ratios.map(String) : [],
       generate_audio: model.generate_audio === true,
+      is_free: priceIsFree(model.pricing_skus),
+      free_known: true,
     }))
 }
 
@@ -198,6 +210,9 @@ export function normalizeSpeechModels(raw) {
       id: String(model.id),
       name: String(model.name || model.id),
       description: String(model.description || ''),
+      pricing: model.pricing && typeof model.pricing === 'object' ? model.pricing : {},
+      is_free: priceIsFree(model.pricing),
+      free_known: true,
     }))
 }
 
