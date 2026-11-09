@@ -78,6 +78,8 @@ export function normalizeConfig(raw = {}) {
     generationDir: raw.generationDir ? String(raw.generationDir) : undefined,
     generationMaxBytes: clampNumber(raw.generationMaxBytes, 100_000, 512_000_000, 100_000_000),
     generationModelsHours: clampNumber(raw.generationModelsHours, 1, 24 * 30, 6),
+    // Model-facing generation tools; a deployment can disable them entirely.
+    toolsEnabled: raw.tools !== false && raw.tool !== false,
   }
 }
 
@@ -687,6 +689,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     await fs.writeFile(filePath, bytes)
     return {
       name,
+      path: filePath,
       bytes: bytes.length,
       mediaType: mediaTypeFor(ext),
       url: `/openrouter-explorer-free/generated/${encodeURIComponent(name)}`,
@@ -853,6 +856,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       generation_dir: generatedDir,
       generation_max_mb: Math.round(settings.generationMaxBytes / 1_000_000),
       generation_models_hours: settings.generationModelsHours,
+      tools_enabled: settings.toolsEnabled,
     }
   }
 
@@ -913,6 +917,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     synthesizeSpeech,
     generatedFiles,
     generatedFile,
+    toolsEnabled: settings.toolsEnabled,
     syncNow,
     autoRoute,
     useModel,

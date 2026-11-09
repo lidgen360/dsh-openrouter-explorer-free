@@ -46,8 +46,50 @@ test('plugin loads without a web server and without touching the network', async
 
   assert.doesNotThrow(() => apply(ctx, { autoProvision: false, intervalHours: 24 }))
   assert.ok(effects.some((label) => String(label).includes('catalog lifecycle')))
-  assert.deepEqual(injected, [['webServer']], 'the HTTP API is requested only as an optional injection')
+  assert.deepEqual(injected, [['webServer'], ['tools']], 'the HTTP API and the agent tools are optional injections')
   await new Promise((resolve) => setTimeout(resolve, 30))
+
+  delete process.env.DSH_OPENROUTER_MODELS_FILE
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('registers the four generation tools when the tools service is present', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-orx-tools-'))
+  const file = path.join(dir, 'state.json')
+  fs.writeFileSync(file, JSON.stringify({
+    schema_version: 1,
+    synced_at: '2026-01-01T00:00:00.000Z',
+    next_sync_at: '2099-01-01T00:00:00.000Z',
+    samples: 1,
+    baseline_at: '2026-01-01T00:00:00.000Z',
+    models: [],
+    events: [],
+    syncs: [],
+  }))
+  process.env.DSH_OPENROUTER_MODELS_FILE = file
+
+  const { apply } = await import('../index.js')
+  const registered = []
+  const ctx = {
+    logger: { info() {}, warn() {} },
+    get: () => undefined,
+    effect: (callback) => { const dispose = callback(); if (typeof dispose === 'function') dispose() },
+    inject: (services, callback) => {
+      if (!services.includes('tools')) return
+      callback({
+        tools: { register: (definition) => { registered.push(definition); return () => {} } },
+        effect: (fn) => { const dispose = fn(); if (typeof dispose === 'function') dispose() },
+      })
+    },
+  }
+
+  apply(ctx, { autoProvision: false, intervalHours: 24 })
+  assert.deepEqual(registered.map((definition) => definition.name), [
+    'openrouter_generate_image',
+    'openrouter_generate_video',
+    'openrouter_video_status',
+    'openrouter_generate_speech',
+  ])
 
   delete process.env.DSH_OPENROUTER_MODELS_FILE
   fs.rmSync(dir, { recursive: true, force: true })

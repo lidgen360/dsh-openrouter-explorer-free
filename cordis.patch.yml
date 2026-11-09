@@ -10,6 +10,6 @@
         journalDays: 90
         apiKeyRef: OPENROUTER_API_KEY
         autoProvision: true
-        tool: false
+        tools: true
         generationMaxBytes: 100000000
         generationModelsHours: 6

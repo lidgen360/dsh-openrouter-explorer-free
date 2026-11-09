@@ -9,6 +9,7 @@
  */
 import { createCatalogService } from './src/host/service.js'
 import { registerRoutes } from './src/host/api.js'
+import { registerGenerationTools } from './src/host/tools.js'
 
 export const name = 'openrouter-explorer-free'
 
@@ -31,5 +32,11 @@ export function apply(ctx, config) {
   // The API exists only beside a Web server; other profiles skip it silently.
   ctx.inject(['webServer'], (webCtx) => {
     webCtx.effect(() => registerRoutes(webCtx, service), 'openrouter-explorer-free: http api')
+  })
+
+  // Model-facing generation tools exist only where the agent has a tools
+  // registry; `tools: false` in the row config disables them explicitly.
+  ctx.inject(['tools'], (toolsCtx) => {
+    toolsCtx.effect(() => registerGenerationTools(toolsCtx, service), 'openrouter-explorer-free: generation tools')
   })
 }
