@@ -10,6 +10,7 @@ import {
   buildStatus,
   computeHigh,
   freeChatModels,
+  isChatCapable,
   isFreeChatModel,
   listEvents,
   listModels,
@@ -247,4 +248,20 @@ test('modality filter is inclusive: universal models stay in every supported cat
   assert.deepEqual(ids({ modality: 'text' }), ['vendor/audio-out', 'vendor/text', 'vendor/universal'])
   // no modality filter → everything
   assert.equal(ids({}).length, 3)
+})
+
+
+test('chat capability excludes generation output and media input models', () => {
+  assert.equal(isChatCapable({ input_modalities: ['text'], output_modalities: ['text'] }), true)
+  assert.equal(isChatCapable({ input_modalities: ['text', 'image'], output_modalities: ['text'] }), true)
+  assert.equal(isChatCapable({ input_modalities: ['text'], output_modalities: ['text', 'audio'] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['text'], output_modalities: ['text', 'image'] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['text', 'video'], output_modalities: ['text'] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['text', 'audio'], output_modalities: ['text'] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['image'], output_modalities: ['text'] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['text'], output_modalities: [] }), false)
+  assert.equal(isChatCapable({ input_modalities: ['text'], output_modalities: ['text'], status: 'removed' }), false)
+  assert.equal(isChatCapable(null), false)
+  // the free chat ranking uses the same rule
+  assert.equal(isFreeChatModel({ is_free: true, input_modalities: ['text'], output_modalities: ['text', 'audio'] }), false)
 })

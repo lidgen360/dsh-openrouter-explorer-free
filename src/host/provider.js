@@ -4,6 +4,7 @@
  * absent from that list cannot be selected, so auto-routing adds it first.
  * The edit keeps YAML comments and applies through Loader/HMR immediately.
  */
+import { isChatCapable } from './catalog.js'
 
 /** Resolve the provider route entry and its effective (inherited + profile) config. */
 function providerConfig(loader, editor, entryId) {
@@ -79,4 +80,47 @@ export async function ensureProviderModel(ctx, { provider, entryId, model, maxTo
     providers: { ...(inherited?.providers ?? {}), ...(current?.providers ?? {}), [provider]: profile },
   }))
   return { changed: true }
+}
+
+
+/**
+ * Remove models the chat pipeline cannot run (generation-only output or
+ * audio/video input) from the provider route. Models the catalog does not know
+ * are left alone: they may be hand-written entries.
+ * @returns {Promise<{changed: boolean, removed: string[], reason?: string}>}
+ */
+export async function pruneProviderChatModels(ctx, { provider, entryId, catalogModels }) {
+  const loader = ctx?.get?.('loader')
+  const editor = ctx?.get?.('configEditor')
+  if (!loader || !editor) return { changed: false, removed: [], reason: 'config-editor недоступен' }
+  let entry
+  let providers
+  try {
+    ;({ entry, providers } = providerConfig(loader, editor, entryId))
+  } catch (error) {
+    return { changed: false, removed: [], reason: String(error?.message || error) }
+  }
+  const profile = providers[provider]
+  if (!profile || !Array.isArray(profile.models) || profile.models.length === 0) return { changed: false, removed: [] }
+  const catalog = new Map((Array.isArray(catalogModels) ? catalogModels : []).map((model) => [model.id, model]))
+  const removed = []
+  const kept = []
+  for (const item of profile.models) {
+    const id = item && typeof item === 'object' ? item.id : null
+    const model = id ? catalog.get(id) : null
+    if (model && !isChatCapable(model)) {
+      removed.push(id)
+      continue
+    }
+    kept.push(item)
+  }
+  if (removed.length === 0) return { changed: false, removed: [] }
+  const nextProfile = { ...profile, models: kept }
+  providers[provider] = nextProfile
+  await editor.edit(entry, (current, inherited) => ({
+    ...inherited,
+    ...current,
+    providers: { ...(inherited?.providers ?? {}), ...(current?.providers ?? {}), [provider]: nextProfile },
+  }))
+  return { changed: true, removed }
 }

@@ -421,3 +421,31 @@ test('generation: discovery, images, video job and speech are saved and cached',
   assert.equal(missing.ok, false)
   assert.equal(missing.reason, 'no_key')
 })
+
+
+test('use-model rejects a generation model before touching the provider', async () => {
+  const stateFile = tempStateFile()
+  fs.writeFileSync(stateFile, JSON.stringify({
+    schema_version: 1,
+    syncs: [],
+    events: [],
+    models: [{
+      id: 'google/lyria-3-clip-preview',
+      name: 'Google: Lyria 3 Clip Preview',
+      status: 'active',
+      is_free: true,
+      context_length: 8_192,
+      input_modalities: ['text', 'image'],
+      output_modalities: ['text', 'audio'],
+    }],
+  }))
+  const { context, edits, selections } = fakeContext()
+  const service = createCatalogService(context, { stateFile }, { fetchImpl: fakeFetch().impl, now: NOW })
+
+  const result = await service.useModel({ sessionId: 'session-1', modelId: 'google/lyria-3-clip-preview' })
+
+  assert.equal(result.ok, false)
+  assert.match(result.error, /Генерация/)
+  assert.equal(edits.length, 0, 'the provider config is untouched')
+  assert.equal(selections.length, 0, 'the session model is untouched')
+})

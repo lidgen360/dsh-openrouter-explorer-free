@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ensureProviderModel, ensureProviderRoute } from '../src/host/provider.js'
+import { ensureProviderModel, ensureProviderRoute, pruneProviderChatModels } from '../src/host/provider.js'
 
 function fakeCtx({ providers = {}, hasEditor = true } = {}) {
   const edits = []
@@ -104,4 +104,45 @@ test('does not edit the route when the model is already configured', async () =>
 
   assert.equal(result.changed, false)
   assert.equal(edits.length, 0)
+})
+
+
+test('prunes generation models from the route and keeps unknown entries', async () => {
+  const { ctx, edits } = fakeCtx({
+    providers: {
+      openrouter: {
+        displayName: 'OpenRouter',
+        models: [{ id: 'chat/model' }, { id: 'audio/model' }, { id: 'custom/unknown' }],
+      },
+    },
+  })
+  const result = await pruneProviderChatModels(ctx, {
+    provider: 'openrouter',
+    entryId: 'llm-pi-ai',
+    catalogModels: [
+      { id: 'chat/model', input_modalities: ['text'], output_modalities: ['text'] },
+      { id: 'audio/model', input_modalities: ['text'], output_modalities: ['text', 'audio'] },
+    ],
+  })
+  assert.equal(result.changed, true)
+  assert.deepEqual(result.removed, ['audio/model'])
+  assert.deepEqual(edits[0].providers.openrouter.models.map((model) => model.id), ['chat/model', 'custom/unknown'])
+})
+
+test('pruning is a no-op when the route is absent or nothing matches', async () => {
+  const empty = fakeCtx({ providers: { deepseek: { models: [] } } })
+  assert.equal((await pruneProviderChatModels(empty.ctx, { provider: 'openrouter', entryId: 'llm-pi-ai', catalogModels: [] })).changed, false)
+
+  const clean = fakeCtx({ providers: { openrouter: { models: [{ id: 'chat/model' }] } } })
+  const result = await pruneProviderChatModels(clean.ctx, {
+    provider: 'openrouter',
+    entryId: 'llm-pi-ai',
+    catalogModels: [{ id: 'chat/model', input_modalities: ['text'], output_modalities: ['text'] }],
+  })
+  assert.equal(result.changed, false)
+  assert.equal(clean.edits.length, 0)
+
+  const noEditor = fakeCtx({ hasEditor: false })
+  const missing = await pruneProviderChatModels(noEditor.ctx, { provider: 'openrouter', entryId: 'llm-pi-ai', catalogModels: [] })
+  assert.match(missing.reason, /config-editor/)
 })

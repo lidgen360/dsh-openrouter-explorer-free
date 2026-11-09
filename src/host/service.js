@@ -6,10 +6,10 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { applyCatalog, buildStatus, freeChatModels, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
+import { applyCatalog, buildStatus, freeChatModels, isChatCapable, listEvents, listModels, markEventsRead, LIMITS } from './catalog.js'
 import { emptyState, readState, writeState, withStateLock } from './state.js'
 import { generationDir, legacyStateFilePath, rankingsFilePath, stateFilePath } from './home.js'
-import { ensureProviderModel, ensureProviderRoute } from './provider.js'
+import { ensureProviderModel, ensureProviderRoute, pruneProviderChatModels } from './provider.js'
 import { creditsUrl, normalizeCredits } from './balance.js'
 import {
   IMAGE_GENERATE_PATH,
@@ -131,6 +131,20 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   }
   const nowIso = () => clock().toISOString()
 
+  /** Drop provider models the chat pipeline cannot run (generation, media input). */
+  async function pruneProviderModels(catalogModels) {
+    try {
+      const pruned = await pruneProviderChatModels(ctx, {
+        provider: settings.provider,
+        entryId: settings.providerEntryId,
+        catalogModels,
+      })
+      if (pruned.changed) log(`из провайдера убраны не-чат модели: ${pruned.removed.join(', ')}`)
+    } catch (error) {
+      log(`не удалось вычистить не-чат модели: ${error?.message || error}`)
+    }
+  }
+
   async function ensureState() {
     // One-time migration from the pre-0.4.0 state directory; the next write
     // lands on the new path, so the legacy file becomes stale on purpose.
@@ -222,6 +236,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       current.journal_days = settings.journalDays
       await writeState(file, current)
       log(`каталог обновлён: ${summary.total} моделей, бесплатных ${summary.free}, событий ${summary.events}`)
+      await pruneProviderModels(current.models)
       return summary
     })
   }
@@ -372,6 +387,15 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     const model = (Array.isArray(current.models) ? current.models : [])
       .find((item) => item?.id === modelId && item.status !== 'removed')
     if (!model) return { ok: false, error: `модель «${modelId}» не найдена в каталоге` }
+    if (!isChatCapable(model)) {
+      const input = (model.input_modalities || []).join('+') || '?'
+      const output = (model.output_modalities || []).join('+') || '?'
+      return {
+        ok: false,
+        error: `«${model.name || model.id}» не подходит для чата (вход: ${input}, выход: ${output}) — `
+          + 'это генерация медиа: используйте вкладку «Генерация»',
+      }
+    }
     try {
       const { changed } = await ensureProviderModel(ctx, {
         provider: settings.provider,
@@ -890,6 +914,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
           }
         }
         if (isDue(state)) await syncNow()
+        await pruneProviderModels((await ensureState()).models)
       } catch (error) {
         log(`стартовая синхронизация не удалась: ${error?.message || error}`)
       } finally {

@@ -598,12 +598,28 @@ export function markEventsRead(data, input = {}) {
   return { unread: events.filter((event) => !event.read).length, marked }
 }
 
-/** A free model the chat protocol can actually run: text in, text out. */
+/** Input modalities the harness chat transport cannot send at all. */
+const CHAT_UNSUPPORTED_INPUTS = new Set(['audio', 'video'])
+
+/**
+ * A model the harness chat pipeline can actually run: text in, text-only out,
+ * and no audio/video input. Generation models (`output: text+audio/image/video`)
+ * and multimodal-input models belong to the dedicated media APIs instead.
+ */
+export function isChatCapable(model) {
+  if (!model || model.status === 'removed') return false
+  const input = Array.isArray(model.input_modalities) ? model.input_modalities.map((value) => String(value).toLowerCase()) : []
+  const output = Array.isArray(model.output_modalities) ? model.output_modalities.map((value) => String(value).toLowerCase()) : []
+  if (!input.includes('text')) return false
+  if (input.some((value) => CHAT_UNSUPPORTED_INPUTS.has(value))) return false
+  if (output.length === 0) return false
+  return output.every((value) => value === 'text')
+}
+
+/** A free model the chat protocol can actually run: text in, text-only out. */
 export function isFreeChatModel(model) {
-  if (!model || model.is_free !== true || model.status === 'removed') return false
-  const input = Array.isArray(model.input_modalities) ? model.input_modalities : []
-  const output = Array.isArray(model.output_modalities) ? model.output_modalities : []
-  return input.includes('text') && output.includes('text')
+  if (!model || model.is_free !== true) return false
+  return isChatCapable(model)
 }
 
 /** Free chat models ordered by the largest context window first. */

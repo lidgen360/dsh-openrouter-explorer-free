@@ -20,14 +20,14 @@
 ## Команды
 
 ```sh
-node --test tests/              # 66 тестов: каталог, сервис, провайдер, журнал, состояние
+node --test tests/              # 70 тестов: каталог, сервис, провайдер, журнал, состояние
 node scripts/test-profiles.mjs  # матрица профилей: web, headless, sdk, acp (4/4)
 node --check index.js && node --check lib/client.js
 ```
 
 ## Версия
 
-Источник — `version` в `package.json` (сейчас `0.8.2`); синхронизировать с `CHANGELOG.md`.
+Источник — `version` в `package.json` (сейчас `0.8.3`); синхронизировать с `CHANGELOG.md`.
 
 <!-- tokenguard:guard -->
 ## Экономия контекста (tokenguard)
