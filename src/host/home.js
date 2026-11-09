@@ -29,3 +29,13 @@ export function rankingsFilePath() {
   if (override) return path.resolve(override)
   return path.join(dshHome(), 'openrouter-explorer-free', 'rankings.json')
 }
+
+/**
+ * Directory for generated media (images, video, speech). Kept beside the state
+ * so one cleanup rule covers everything the plugin writes.
+ */
+export function generationDir() {
+  const override = String(process.env.DSH_OPENROUTER_GENERATED_DIR || '').trim()
+  if (override) return path.resolve(override)
+  return path.join(dshHome(), 'openrouter-explorer-free', 'generated')
+}

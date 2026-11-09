@@ -11,3 +11,5 @@
         apiKeyRef: OPENROUTER_API_KEY
         autoProvision: true
         tool: false
+        generationMaxBytes: 100000000
+        generationModelsHours: 6

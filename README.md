@@ -20,6 +20,7 @@
 | **Скидки** | OpenRouter не отдаёт поле «скидка», поэтому цена сравнивается с **собственной** историей: предыдущий замер и максимум за 30 дней, порог 30%. Пишутся события «цена упала», «подорожала», «стала бесплатной», «исчезла», «скоро исчезнет» |
 | **«Едем на халяву»** | Бесплатные chat-модели сортируются по размеру контекста; до 6 кандидатов пингуются реальным `chat/completions` (батчами по 3); первая ответившая модель добавляется в `models` провайдера OpenRouter через `ctx.configEditor` и выбирается для текущей сессии |
 | **Баланс ключа** | Под кнопкой «Едем на халяву» — остаток по ключу OpenRouter (`GET /api/v1/credits`, только host-часть: ключ не уходит в браузер) и ссылка **«Пополнить»** на сайт `openrouter.ai/settings/credits`. Плагин платежи не обрабатывает — деньги идут только на сайте |
+| **Генерация медиа** | Вкладка «Генерация» (Картинки / Видео / Звук): картинки — `POST /api/v1/images` (63 модели), видео — job-API `POST /api/v1/videos` с поллингом и MP4 (33 модели), озвучка — `POST /api/v1/audio/speech` (38 TTS-моделей). Файлы сохраняются в `$DSH_HOME/openrouter-explorer-free/generated/` и раздаются через API плагина; ключ остаётся на host-части. Для видео показывается оценка стоимости по `pricing_skus` модели. Это отдельные API OpenRouter — не `chat/completions`, поэтому генерация живёт во вкладке, а не в выборе модели чата |
 | **Меню в композере** | Кнопка **«🛷 модели»** рядом с выбором модели раскрывает каталог: KPI, «Едем на халяву», поиск, фильтры и список моделей с ценами; клик по модели добавляет её в провайдера и переключает сессию |
 | **Цена в меню моделей** | Слот `conversation.input.model.label` показывает цену $/1M, «бесплатно» и скидку прямо в штатном селекторе модели |
 | **Журнал** | Последние события каталога в том же окне, с отметкой «прочитано» |
@@ -64,6 +65,9 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
     rankingsHours: 6                # кэш рейтингов, часов
     rankingsLimit: 60               # строк в лидерборде
     balanceSeconds: 60              # кэш баланса ключа, секунд (0 — всегда запрашивать)
+    generationDir: ~/.dsh/openrouter-explorer-free/generated  # куда складывать медиа (по умолчанию рядом со state)
+    generationMaxBytes: 100000000   # максимум на один файл, байт
+    generationModelsHours: 6        # кэш списков моделей генерации, часов
     apiKeyRef: OPENROUTER_API_KEY   # ссылка на credential, НЕ сам ключ
     maxCandidates: 6                # сколько бесплатных моделей пинговать
     source: https://openrouter.ai/api/v1/models
@@ -95,6 +99,14 @@ dsh plugin --profile web remove dsh-openrouter-explorer-free
 | GET | `/openrouter-explorer-free/settings` | действующие настройки |
 | GET | `/openrouter-explorer-free/rankings` | лидерборд + бенчмарки (кэш `rankingsHours`; `?refresh=1` — принудительно) |
 | GET | `/openrouter-explorer-free/balance` | баланс ключа: `{ ok, remaining, total_credits, total_usage }` (кэш `balanceSeconds`; `?refresh=1`) |
+| GET | `/openrouter-explorer-free/generation/models` | модели генерации: `kind=image|video|speech` (кэш `generationModelsHours`) |
+| POST | `/openrouter-explorer-free/generate/image` | `{ model, prompt, aspectRatio, resolution, quality }` → файлы (base64 → диск) + `cost` |
+| POST | `/openrouter-explorer-free/generate/video` | `{ model, prompt, duration, resolution, aspectRatio, generateAudio }` → `job` + оценка |
+| GET | `/openrouter-explorer-free/generate/video/status?id=` | статус job’а (`pending/…/completed`) и `urls` |
+| GET | `/openrouter-explorer-free/generate/video/content?id=` | скачать готовый MP4 в `generated/` и получить URL |
+| POST | `/openrouter-explorer-free/generate/speech` | `{ model, input, voice, format, speed }` → аудио-файл |
+| GET | `/openrouter-explorer-free/generated` | последние сгенерированные файлы |
+| GET | `/openrouter-explorer-free/generated/{file}` | отдать файл (image/video/audio) для превью |
 | POST | `/openrouter-explorer-free/events/read` | `{ all: true }` или `{ ids: [...] }` |
 | POST | `/openrouter-explorer-free/sync` | ручное обновление каталога |
 | POST | `/openrouter-explorer-free/auto-route` | `{ sessionId }` → пинг + включение модели + переключение сессии |
@@ -113,6 +125,7 @@ src/host/api.js         HTTP-маршруты вкладки
 src/host/state.js       атомарная запись состояния
 src/host/rankings.js    рейтинги: usage-снапшот, AA-бенчмарки, склейка с каталогом
 src/host/balance.js     баланс ключа: /api/v1/credits без утечки ключа в браузер
+src/host/generation.js  генерация: /images, /videos (job), /audio/speech + нормализация
 tests/                  node:test, без сети
 ```
 
@@ -190,6 +203,10 @@ locale-сервиса харнесса, для остальных локалей
   но откатить можно обычным выбором модели в композере.
 - Рейтинги используют недокументированные frontend-эндпоинты OpenRouter (те же, что у сайта). Если они изменятся,
   вкладка покажет ошибку, каталог при этом продолжит работать; кэш рейтингов лежит отдельно в `rankings.json`.
+- Генерация медиа платная на стороне OpenRouter (за изображение, за секунду видео, за токены TTS) и
+  списывается с баланса ключа; плагин платежи не обрабатывает, только вызывает API и сохраняет файлы.
+  Картинки/видео/озвучка — отдельные API OpenRouter, а не `chat/completions`, поэтому в чате их
+  выбрать нельзя: для них есть вкладка «Генерация».
 - Плагин рассчитан на Web-профиль (нужен `webServer`); в headless/SDK-профилях строка не активируется.
 
 ## Лицензия

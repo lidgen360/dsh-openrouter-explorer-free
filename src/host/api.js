@@ -1,5 +1,18 @@
+import fs from 'node:fs/promises'
+
 const BASE = '/openrouter-explorer-free'
 const MAX_BODY_BYTES = 1_000_000
+
+async function sendBinaryFile(res, file) {
+  const data = await fs.readFile(file.path)
+  res.writeHead(200, {
+    'content-type': file.mediaType,
+    'content-length': data.length,
+    'cache-control': 'private, max-age=86400',
+    'content-disposition': `inline; filename="${String(file.name).replace(/"/g, '')}"`,
+  })
+  res.end(data)
+}
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload)
@@ -84,6 +97,41 @@ async function handle(service, req, res) {
     }
     if (method === 'GET' && path === '/balance') {
       return sendJson(res, 200, await service.balance({ refresh: query.get('refresh') }))
+    }
+    if (method === 'GET' && path === '/generation/models') {
+      return sendJson(res, 200, await service.generationModels({
+        kind: query.get('kind') || 'image',
+        refresh: query.get('refresh'),
+      }))
+    }
+    if (method === 'POST' && path === '/generate/image') {
+      return sendJson(res, 200, await service.generateImage(await readBody(req)))
+    }
+    if (method === 'POST' && path === '/generate/video') {
+      return sendJson(res, 200, await service.generateVideo(await readBody(req)))
+    }
+    if (method === 'GET' && path === '/generate/video/status') {
+      return sendJson(res, 200, await service.videoJob({ id: query.get('id') }))
+    }
+    if (method === 'GET' && path === '/generate/video/content') {
+      return sendJson(res, 200, await service.videoContent({ id: query.get('id'), index: query.get('index') }))
+    }
+    if (method === 'POST' && path === '/generate/speech') {
+      return sendJson(res, 200, await service.synthesizeSpeech(await readBody(req)))
+    }
+    if (method === 'GET' && path === '/generated') {
+      return sendJson(res, 200, { files: await service.generatedFiles() })
+    }
+    if (method === 'GET' && path.startsWith('/generated/')) {
+      let name = ''
+      try {
+        name = decodeURIComponent(path.slice('/generated/'.length))
+      } catch {
+        return sendJson(res, 400, { error: 'некорректное имя файла' })
+      }
+      const file = await service.generatedFile(name)
+      if (!file) return sendJson(res, 404, { error: 'файл не найден' })
+      return sendBinaryFile(res, file)
     }
     if (method === 'POST' && path === '/events/read') {
       return sendJson(res, 200, await service.readEvents(await readBody(req)))

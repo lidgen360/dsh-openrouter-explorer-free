@@ -326,3 +326,98 @@ test('balance: /credits is cached, refresh is forced and a missing key is report
   assert.equal(failed.reason, 'error')
   assert.match(failed.error, /HTTP 401/)
 })
+
+test('generation: discovery, images, video job and speech are saved and cached', async () => {
+  const stateFile = tempStateFile()
+  const generatedDir = path.join(path.dirname(stateFile), 'generated')
+  const { context } = fakeContext()
+  const calls = []
+  const png = Buffer.from('PNGBYTES')
+  const mp3 = Buffer.from('MP3BYTES')
+  const mp4 = Buffer.from('MP4BYTES')
+  const fetchImpl = async (url, init = {}) => {
+    const target = String(url)
+    calls.push({ url: target, method: init.method || 'GET', headers: init.headers || {}, body: init.body })
+    const json = (payload) => new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (target.endsWith('/images/models')) return json({ data: [{ id: 'img/a', name: 'Img A' }] })
+    if (target.endsWith('/videos/models')) return json({ data: [{ id: 'vid/a', name: 'Vid A', pricing_skus: { duration_seconds_720p: '0.5' }, supported_resolutions: ['720p'], supported_durations: [8] }] })
+    if (target.includes('/models?output_modalities=speech')) return json({ data: [{ id: 'tts/a', name: 'TTS A' }] })
+    if (target.endsWith('/images') && init.method === 'POST') {
+      return json({ created: 1, data: [{ b64_json: png.toString('base64'), media_type: 'image/png' }], usage: { cost: 0.04 } })
+    }
+    if (target.endsWith('/videos') && init.method === 'POST') return json({ id: 'gen-vid-1', status: 'pending', polling_url: '/api/v1/videos/gen-vid-1' })
+    if (target.endsWith('/videos/gen-vid-1')) return json({ id: 'gen-vid-1', status: 'completed', urls: ['https://x/v.mp4'], usage: { cost: 0.56 } })
+    if (target.includes('/videos/gen-vid-1/content')) return new Response(mp4, { status: 200, headers: { 'content-type': 'video/mp4' } })
+    if (target.endsWith('/audio/speech') && init.method === 'POST') return new Response(mp3, { status: 200, headers: { 'content-type': 'audio/mpeg' } })
+    return json(catalogPayload())
+  }
+  const service = createCatalogService(context, { stateFile, generationDir: generatedDir }, {
+    fetchImpl,
+    now: NOW,
+    resolveApiKey: () => 'test-key',
+  })
+
+  const images = await service.generationModels({ kind: 'image' })
+  const videos = await service.generationModels({ kind: 'video' })
+  const speech = await service.generationModels({ kind: 'speech' })
+  assert.equal(images.ok, true)
+  assert.equal(images.models[0].id, 'img/a')
+  assert.equal(videos.ok, true)
+  assert.equal(videos.models[0].id, 'vid/a')
+  assert.equal(speech.ok, true)
+  assert.equal(speech.models[0].id, 'tts/a')
+
+  const modelCalls = () => calls.filter((call) => call.url.includes('/images/models')
+    || call.url.includes('/videos/models')
+    || call.url.includes('output_modalities=speech')).length
+  assert.equal(modelCalls(), 3)
+  const warm = await service.generationModels({ kind: 'image' })
+  assert.equal(warm.cached, true)
+  assert.equal(modelCalls(), 3, 'model lists are cached')
+
+  const image = await service.generateImage({ model: 'img/a', prompt: 'a cat', resolution: '2K' })
+  assert.equal(image.ok, true)
+  assert.equal(image.cost, 0.04)
+  assert.equal(image.files.length, 1)
+  assert.deepEqual(await fs.promises.readFile(path.join(generatedDir, image.files[0].name)), png)
+  assert.equal(image.files[0].mediaType, 'image/png')
+  const imagePost = calls.find((call) => call.url.endsWith('/images') && call.method === 'POST')
+  assert.equal(imagePost.headers.authorization, 'Bearer test-key')
+  assert.deepEqual(JSON.parse(imagePost.body), { model: 'img/a', prompt: 'a cat', resolution: '2K' })
+
+  const video = await service.generateVideo({ model: 'vid/a', prompt: 'sea', duration: 8 })
+  assert.equal(video.ok, true)
+  assert.equal(video.job.id, 'gen-vid-1')
+  assert.equal(video.estimate, 4)
+  const status = await service.videoJob({ id: 'gen-vid-1' })
+  assert.equal(status.ok, true)
+  assert.equal(status.job.status, 'completed')
+  assert.equal(status.job.cost, 0.56)
+  const content = await service.videoContent({ id: 'gen-vid-1' })
+  assert.equal(content.ok, true)
+  assert.deepEqual(await fs.promises.readFile(path.join(generatedDir, content.file.name)), mp4)
+
+  const spoken = await service.synthesizeSpeech({ model: 'tts/a', input: 'hello', voice: 'v1' })
+  assert.equal(spoken.ok, true)
+  assert.equal(spoken.file.mediaType, 'audio/mpeg')
+  assert.deepEqual(await fs.promises.readFile(path.join(generatedDir, spoken.file.name)), mp3)
+
+  const files = await service.generatedFiles()
+  assert.equal(files.length, 3)
+  const served = await service.generatedFile(image.files[0].name)
+  assert.equal(served.mediaType, 'image/png')
+  assert.equal(await service.generatedFile('../../etc/passwd'), null)
+
+  const invalid = await service.generateImage({ model: 'img/a' })
+  assert.equal(invalid.ok, false)
+  assert.match(invalid.error, /prompt/)
+
+  const noKey = createCatalogService(context, { stateFile, generationDir: generatedDir }, {
+    fetchImpl,
+    now: NOW,
+    resolveApiKey: () => '',
+  })
+  const missing = await noKey.generationModels({ kind: 'image' })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.reason, 'no_key')
+})
