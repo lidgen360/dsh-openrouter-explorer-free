@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="26" fill="#7624F4"/>
+
+  <!-- suspension / axles -->
+  <rect x="30" y="50" width="10" height="46" rx="3" fill="#C8FF00"/>
+  <rect x="88" y="50" width="10" height="46" rx="3" fill="#C8FF00"/>
+
+  <!-- high-riding SUV body -->
+  <path fill="#C8FF00" d="M12 64 L16 46 L39 42 L50 26 L84 26 L97 42 L111 46 L115 62 L115 67 L12 67 Z"/>
+  <!-- windshield + side window -->
+  <path fill="#7624F4" d="M47 42 L57 30 L78 30 L90 42 Z"/>
+  <path fill="#7624F4" d="M52 47 L59 40 L86 40 L94 47 Z"/>
+
+  <!-- huge knobby wheels -->
+  <g fill="#C8FF00">
+    <circle cx="35" cy="92" r="23"/>
+    <circle cx="93" cy="92" r="23"/>
+  </g>
+  <g fill="#7624F4">
+    <circle cx="35" cy="92" r="9"/>
+    <circle cx="93" cy="92" r="9"/>
+  </g>
+  <g stroke="#7624F4" stroke-width="4" stroke-linecap="round">
+    <g transform="rotate(0 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(45 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(90 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(135 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(180 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(225 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(270 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(315 35 92)"><path d="M35 66 L35 72"/></g>
+    <g transform="rotate(0 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(45 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(90 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(135 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(180 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(225 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(270 93 92)"><path d="M93 66 L93 72"/></g>
+    <g transform="rotate(315 93 92)"><path d="M93 66 L93 72"/></g>
+  </g>
+</svg>

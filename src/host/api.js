@@ -3,8 +3,11 @@ import { fileURLToPath } from 'node:url'
 
 const BASE = '/openrouter-explorer-free'
 const MAX_BODY_BYTES = 1_000_000
-/** Brand asset shipped with the package, served for the in-product mark. */
-const BRAND_LOGO_FILE = fileURLToPath(new URL('../../assets/logo.svg', import.meta.url))
+/** Brand assets shipped with the package: Lidogen mark + product (Bigfoot truck) logo. */
+const BRAND_ASSETS = {
+  '/brand/logo.svg': fileURLToPath(new URL('../../assets/logo.svg', import.meta.url)),
+  '/brand/truck.svg': fileURLToPath(new URL('../../assets/truck.svg', import.meta.url)),
+}
 
 async function sendBinaryFile(res, file) {
   const data = await fs.readFile(file.path)
@@ -165,9 +168,9 @@ async function handle(service, req, res) {
       const result = await service.useModel({ sessionId, modelId: body?.model || body?.modelId })
       return sendJson(res, result?.ok ? 200 : 400, result)
     }
-    if (method === 'GET' && path === '/brand/logo.svg') {
+    if (method === 'GET' && BRAND_ASSETS[path]) {
       try {
-        const svg = await fs.readFile(BRAND_LOGO_FILE)
+        const svg = await fs.readFile(BRAND_ASSETS[path])
         res.writeHead(200, {
           'content-type': 'image/svg+xml; charset=utf-8',
           'content-length': svg.length,

@@ -15,6 +15,15 @@
 круглую подложку (`background:#fff; border-radius:50%; padding:1px`). На светлой
 теме — без подложки.
 
+## Логотип продукта
+
+- **Продуктовый знак**: `assets/truck.svg` — фиолетовый квадрат #7624F4 + лаймовый монстр-трак
+  #C8FF00 («Bigfoot» / внедорожник на больших колёсах). Стоит в пилюле композера
+  (иконка `explorer`), на лендинге продукта и в README.
+- **Логотип Lidogen 360** (`assets/logo.svg`, красный знак) — только для родительской подписи
+  `BrandMark`/`lidogenerator.top`; продуктовый знак его не заменяет.
+- Оба раздаются плагином: `GET /openrouter-explorer-free/brand/logo.svg` и `.../brand/truck.svg`.
+
 ## UTM-схема
 
 `https://lidogenerator.top/?utm_source=<app>&utm_medium=<surface>&utm_campaign=brand`
