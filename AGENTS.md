@@ -27,7 +27,7 @@ node --check index.js && node --check lib/client.js
 
 ## Версия
 
-Источник — `version` в `package.json` (сейчас `0.9.1`); синхронизировать с `CHANGELOG.md`.
+Источник — `version` в `package.json` (сейчас `0.9.2`); синхронизировать с `CHANGELOG.md`.
 
 ## Бренд
 
