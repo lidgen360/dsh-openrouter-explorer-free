@@ -214,6 +214,14 @@ locale-сервиса харнесса, для остальных локалей
   помечены бейджем «не для чата» и вычищаются из провайдера при старте/синке; для них есть вкладка «Генерация».
 - Плагин рассчитан на Web-профиль (нужен `webServer`); в headless/SDK-профилях строка не активируется.
 
+## Сделано в Lidogen 360
+
+[![Lidogen 360](assets/logo.svg)](https://lidogenerator.top/?utm_source=dsh-openrouter-explorer-free&utm_medium=readme&utm_campaign=brand)
+
+Плагин развивает команда [Lidogen 360](https://lidogenerator.top/?utm_source=dsh-openrouter-explorer-free&utm_medium=readme&utm_campaign=brand) —
+сайты и лендинги, которые приносят клиентов. Правила бренд-ссылки для остальных наших
+приложений — в [docs/BRANDING.md](docs/BRANDING.md).
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).

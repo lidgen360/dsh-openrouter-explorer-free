@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 
 const BASE = '/openrouter-explorer-free'
 const MAX_BODY_BYTES = 1_000_000
+/** Brand asset shipped with the package, served for the in-product mark. */
+const BRAND_LOGO_FILE = fileURLToPath(new URL('../../assets/logo.svg', import.meta.url))
 
 async function sendBinaryFile(res, file) {
   const data = await fs.readFile(file.path)
@@ -161,6 +164,19 @@ async function handle(service, req, res) {
       if (!sessionId) return sendJson(res, 400, { ok: false, error: 'не передан id сессии' })
       const result = await service.useModel({ sessionId, modelId: body?.model || body?.modelId })
       return sendJson(res, result?.ok ? 200 : 400, result)
+    }
+    if (method === 'GET' && path === '/brand/logo.svg') {
+      try {
+        const svg = await fs.readFile(BRAND_LOGO_FILE)
+        res.writeHead(200, {
+          'content-type': 'image/svg+xml; charset=utf-8',
+          'content-length': svg.length,
+          'cache-control': 'public, max-age=86400',
+        })
+        return res.end(svg)
+      } catch {
+        return sendJson(res, 404, { error: 'brand asset not found' })
+      }
     }
     return sendJson(res, 404, { error: `Не найдено: ${method} ${path}` })
   } catch (error) {
