@@ -128,6 +128,13 @@ async function handle(service, req, res) {
     if (method === 'POST' && path === '/generate/speech') {
       return sendJson(res, 200, await service.synthesizeSpeech(await readBody(req)))
     }
+    if (method === 'GET' && path === '/model/endpoints') {
+      return sendJson(res, 200, await service.modelEndpoints({ id: query.get('id') || '' }))
+    }
+    if (method === 'DELETE' && path.startsWith('/generated/')) {
+      const name = decodeURIComponent(path.slice('/generated/'.length))
+      return sendJson(res, 200, await service.deleteGenerated({ name }))
+    }
     if (method === 'GET' && path === '/generated') {
       return sendJson(res, 200, { files: await service.generatedFiles() })
     }

@@ -77,6 +77,7 @@ export function normalizeConfig(raw = {}) {
     // Free-model health: a short cache of real pings, stored with the snapshot.
     healthLimit: clampNumber(raw.healthLimit, 1, 20, 8),
     healthSeconds: clampNumber(raw.healthSeconds, 0, 3_600, 300),
+    endpointsSeconds: clampNumber(raw.endpointsSeconds, 0, 3_600, 600),
     // Media generation: where files land, how big they may be, model-cache TTL.
     generationDir: raw.generationDir ? String(raw.generationDir) : undefined,
     generationMaxBytes: clampNumber(raw.generationMaxBytes, 100_000, 512_000_000, 100_000_000),
@@ -799,6 +800,52 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     }
   }
 
+  /* Generated-file gallery: prompt/model/cost live in a hidden index next to the files. */
+  const galleryFile = path.join(generatedDir, '.gallery.json')
+  const galleryJobs = new Map()
+
+  async function recordGallery(files, meta = {}) {
+    try {
+      const raw = await fs.readFile(galleryFile, 'utf8').catch(() => '{}')
+      let index = {}
+      try {
+        index = JSON.parse(raw || '{}')
+      } catch {
+        index = {}
+      }
+      for (const file of files) {
+        index[file.name] = {
+          kind: meta.kind || null,
+          model: meta.model || null,
+          prompt: meta.prompt || null,
+          cost: Number.isFinite(Number(meta.cost)) ? Number(meta.cost) : null,
+          at: nowIso(),
+          bytes: file.bytes,
+        }
+      }
+      const names = Object.keys(index)
+      if (names.length > 300) {
+        const keep = names.slice(-300)
+        const next = {}
+        for (const name of keep) next[name] = index[name]
+        index = next
+      }
+      await fs.writeFile(galleryFile, JSON.stringify(index), { mode: 0o600 })
+    } catch (error) {
+      log(`не удалось записать индекс галереи: ${error?.message || error}`)
+    }
+  }
+
+  async function readGallery() {
+    try {
+      const raw = await fs.readFile(galleryFile, 'utf8')
+      const index = JSON.parse(raw || '{}')
+      return index && typeof index === 'object' ? index : {}
+    } catch {
+      return {}
+    }
+  }
+
   /** Model lists for the generation pickers (cached for `generationModelsHours`). */
   async function generationModels(input = {}) {
     const kind = ['image', 'video', 'speech'].includes(String(input.kind || 'image')) ? String(input.kind || 'image') : 'image'
@@ -835,6 +882,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
       const extension = extensionFor(image.mediaType, 'png')
       files.push(await saveGenerated({ base64: image.base64, extension, prefix: `image-${index + 1}` }))
     }
+    await recordGallery(files, { kind: 'image', model: body.model, prompt: body.prompt, cost: parsed.cost })
     log(`изображение сгенерировано: ${files.map((file) => file.name).join(', ')}`)
     return { ok: true, kind: 'image', model: body.model, prompt: body.prompt, files, cost: parsed.cost }
   }
@@ -850,6 +898,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     if (!result.ok) return { ok: false, error: result.error, reason: result.reason }
     const job = parseVideoResponse(result.payload)
     if (!job.id) return { ok: false, error: 'OpenRouter не вернул id задачи' }
+    galleryJobs.set(String(job.id), { model: body.model, prompt: body.prompt })
     const model = (generationModelsCache.video?.models || []).find((item) => item.id === body.model)
     return {
       ok: true,
@@ -879,6 +928,8 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     let extension = extensionFor(result.contentType, 'mp4')
     if (!['mp4', 'webm', 'mov'].includes(extension)) extension = 'mp4'
     const file = await saveGenerated({ buffer: result.buffer, extension, prefix: `video-${id.slice(0, 24)}` })
+    const meta = galleryJobs.get(id) || {}
+    await recordGallery([file], { kind: 'video', model: meta.model || null, prompt: meta.prompt || null })
     log(`видео сохранено: ${file.name} (${file.bytes} байт)`)
     return { ok: true, kind: 'video', file }
   }
@@ -900,6 +951,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     let extension = extensionFor(result.contentType, body.response_format || 'mp3')
     if (extension === 'bin') extension = body.response_format === 'pcm' ? 'pcm' : 'mp3'
     const file = await saveGenerated({ buffer: result.buffer, extension, prefix: 'speech' })
+    await recordGallery([file], { kind: 'speech', model: body.model, prompt: body.input, voice: body.voice })
     return { ok: true, kind: 'speech', model: body.model, file, cost: null }
   }
 
@@ -907,25 +959,83 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
   async function generatedFiles() {
     try {
       const names = await fs.readdir(generatedDir)
+      const index = await readGallery()
       const files = []
       for (const name of names) {
         if (name.startsWith('.')) continue
         const stat = await fs.stat(path.join(generatedDir, name)).catch(() => null)
         if (!stat || !stat.isFile()) continue
         const extension = path.extname(name).slice(1).toLowerCase()
+        const meta = index[name] || {}
         files.push({
           name,
           bytes: stat.size,
-          at: new Date(stat.mtimeMs).toISOString(),
+          at: meta.at || new Date(stat.mtimeMs).toISOString(),
           mediaType: mediaTypeFor(extension),
           url: `/openrouter-explorer-free/generated/${encodeURIComponent(name)}`,
+          kind: meta.kind || null,
+          model: meta.model || null,
+          prompt: meta.prompt || null,
+          cost: Number.isFinite(Number(meta.cost)) ? Number(meta.cost) : null,
         })
       }
-      files.sort((a, b) => b.at.localeCompare(a.at))
-      return files.slice(0, 50)
+      files.sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      return files.slice(0, 60)
     } catch {
       return []
     }
+  }
+
+  /** Delete one generated file and its gallery record. */
+  async function deleteGenerated(input = {}) {
+    const safe = safeFileName(String(input.name || ''))
+    if (!safe) return { ok: false, error: 'не передано имя файла' }
+    try {
+      await fs.unlink(path.join(generatedDir, safe)).catch(() => {})
+      const index = await readGallery()
+      if (index[safe]) {
+        delete index[safe]
+        await fs.writeFile(galleryFile, JSON.stringify(index), { mode: 0o600 }).catch(() => {})
+      }
+      return { ok: true, name: safe }
+    } catch (error) {
+      return { ok: false, error: error?.message || String(error) }
+    }
+  }
+
+  /** Provider endpoints for one model: price, latency, uptime, data policy. */
+  const endpointsCache = new Map()
+  async function modelEndpoints(input = {}) {
+    const id = String(input.id || '').trim()
+    if (!id) return { ok: false, error: 'не передан id модели' }
+    const cached = endpointsCache.get(id)
+    if (cached && Date.now() - cached.at < settings.endpointsSeconds * 1_000) {
+      return { ...cached.value, cached: true }
+    }
+    const result = await generationRequest(`/models/${encodeURIComponent(id)}/endpoints`)
+    if (!result.ok) return { ok: false, error: result.error, reason: result.reason }
+    const endpoints = Array.isArray(result.payload?.data?.endpoints) ? result.payload.data.endpoints : []
+    const models = endpoints.map((endpoint) => {
+      const pricing = endpoint?.pricing || {}
+      const prompt = Number(pricing.prompt)
+      const completion = Number(pricing.completion)
+      return {
+        provider: endpoint?.provider_name || endpoint?.name || '—',
+        context_length: endpoint?.context_length ?? null,
+        prompt_usd_per_1m: Number.isFinite(prompt) ? prompt * 1_000_000 : null,
+        completion_usd_per_1m: Number.isFinite(completion) ? completion * 1_000_000 : null,
+        quantization: endpoint?.quantization || null,
+        status: endpoint?.status ?? null,
+        uptime_last_30m: Number.isFinite(Number(endpoint?.uptime_last_30m)) ? Number(endpoint.uptime_last_30m) : null,
+        latency_last_30m: Number.isFinite(Number(endpoint?.latency_last_30m)) ? Number(endpoint.latency_last_30m) : null,
+        throughput_last_30m: Number.isFinite(Number(endpoint?.throughput_last_30m)) ? Number(endpoint.throughput_last_30m) : null,
+        max_completion_tokens: endpoint?.max_completion_tokens ?? null,
+        data_policy: endpoint?.data_policy || null,
+      }
+    })
+    const value = { ok: true, id, at: nowIso(), models }
+    endpointsCache.set(id, { at: Date.now(), value })
+    return value
   }
 
   /** One generated file for the media route; never escapes the generated dir. */
@@ -1022,6 +1132,8 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     synthesizeSpeech,
     generatedFiles,
     generatedFile,
+    deleteGenerated,
+    modelEndpoints,
     toolsEnabled: settings.toolsEnabled,
     syncNow,
     autoRoute,
