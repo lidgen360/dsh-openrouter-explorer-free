@@ -102,7 +102,7 @@ async function handle(service, req, res) {
       return sendJson(res, 200, await service.rankings({ refresh: query.get('refresh') }))
     }
     if (method === 'GET' && path === '/health/free') {
-      return sendJson(res, 200, await service.healthFree({ refresh: url.searchParams.get('refresh') === '1' }))
+      return sendJson(res, 200, await service.healthFree({ refresh: query.get('refresh') === '1' }))
     }
     if (method === 'GET' && path === '/balance') {
       return sendJson(res, 200, await service.balance({ refresh: query.get('refresh') }))
