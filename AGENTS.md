@@ -29,6 +29,14 @@ node --check index.js && node --check lib/client.js
 
 Источник — `version` в `package.json` (сейчас `0.9.0`); синхронизировать с `CHANGELOG.md`.
 
+## Бренд
+
+- В интерфейсе плагина обязателен `BrandMark` — логотип Lidogen 360 + ссылка `lidogenerator.top`
+  (UTM, новая вкладка, `rel="noreferrer"`). Подробности — `docs/BRANDING.md`.
+- README пакета содержит блок «Сделано в Lidogen 360»; в GitHub About Website = `https://lidogenerator.top`.
+- Новый продукт/лендинг добавляется в каталог `products.html` материнского сайта (`noindex` + `nofollow`).
+- Общие правила для всех приложений: `/Users/ila/Sites/BRAND-RULES.md`.
+
 <!-- tokenguard:guard -->
 ## Экономия контекста (tokenguard)
 
