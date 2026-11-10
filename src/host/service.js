@@ -74,6 +74,9 @@ export function normalizeConfig(raw = {}) {
     rankingsFile: raw.rankingsFile ? String(raw.rankingsFile) : undefined,
     // Balance is small, read-only data: a short in-memory TTL (0 = always fetch).
     balanceSeconds: clampNumber(raw.balanceSeconds, 0, 3_600, 60),
+    // Free-model health: a short cache of real pings, stored with the snapshot.
+    healthLimit: clampNumber(raw.healthLimit, 1, 20, 8),
+    healthSeconds: clampNumber(raw.healthSeconds, 0, 3_600, 300),
     // Media generation: where files land, how big they may be, model-cache TTL.
     generationDir: raw.generationDir ? String(raw.generationDir) : undefined,
     generationMaxBytes: clampNumber(raw.generationMaxBytes, 100_000, 512_000_000, 100_000_000),
@@ -448,7 +451,17 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
         /* the empty-catalog message below is more useful */
       }
     }
-    const candidates = freeChatModels(await ensureState(), { limit: settings.maxCandidates })
+    const freshState = await ensureState()
+    let candidates = freeChatModels(freshState, { limit: settings.maxCandidates })
+    const health = freshState.health_free
+    if (health && health.models && Array.isArray(health.models)) {
+      const freshMs = Date.parse(health.at || '')
+      const fresh = Number.isFinite(freshMs) && clock().getTime() - freshMs < 10 * 60_000
+      if (fresh) {
+        const dead = new Set(health.models.filter((row) => row && row.ok === false).map((row) => row.id))
+        candidates = [...candidates].sort((a, b) => (dead.has(a.id) ? 1 : 0) - (dead.has(b.id) ? 1 : 0))
+      }
+    }
     if (candidates.length === 0) {
       return { ok: false, error: 'В каталоге нет бесплатных chat-моделей. Обновите каталог.', attempts }
     }
@@ -505,6 +518,72 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
 
     log(`едем на халяву: ${winner.model.id} (${summary.context_length ?? '?'} токенов, пинг ${summary.latency_ms} мс)`)
     return { ok: true, routed: summary, attempts, settings: { provider: settings.provider, interval_hours: settings.intervalHours } }
+  }
+
+  /**
+   * Ping the free chat models and cache the result in the snapshot. The cache
+   * lets the UI show "живая / мертвая" badges without hammering OpenRouter on
+   * every render, and lets auto-route push known-dead models to the end.
+   */
+  async function healthFree(input = {}) {
+    const refresh = input?.refresh === true || input?.refresh === '1' || input?.refresh === 'true'
+    const current = await ensureState()
+    const cached = current.health_free
+    const nowMs = clock().getTime()
+    const ttlMs = settings.healthSeconds * 1_000
+    if (!refresh && cached && cached.at && nowMs - Date.parse(cached.at) < ttlMs) {
+      return { ...cached, cached: true }
+    }
+    const key = await resolveApiKey()
+    if (!key.value) {
+      const value = {
+        ok: false,
+        reason: 'no_key',
+        error: `Нет ключа OpenRouter (${settings.apiKeyRef}) — проверка недоступна`,
+        at: nowIso(),
+      }
+      return { ...value, cached: false }
+    }
+    const candidates = freeChatModels(current, { limit: settings.healthLimit })
+    if (candidates.length === 0) {
+      const value = { ok: false, reason: 'no_free', error: 'В каталоге нет бесплатных chat-моделей', at: nowIso() }
+      return { ...value, cached: false }
+    }
+    const rows = []
+    for (let index = 0; index < candidates.length; index += PING_BATCH) {
+      const batch = candidates.slice(index, index + PING_BATCH)
+      const results = await Promise.all(batch.map(async (model) => {
+        const ping = await pingModel(model.id, key.value)
+        return {
+          id: model.id,
+          name: model.name,
+          context_length: model.context_length ?? null,
+          ok: !!ping.ok,
+          latency_ms: ping.latency_ms ?? null,
+          status: ping.status ?? null,
+          error: ping.error ?? null,
+          at: nowIso(),
+        }
+      }))
+      rows.push(...results)
+    }
+    const payload = { at: nowIso(), models: rows }
+    try {
+      await withStateLock(file, async () => {
+        const latest = (await readState(file)) || emptyState()
+        latest.health_free = payload
+        await writeState(file, latest)
+      })
+    } catch (error) {
+      log(`не удалось сохранить health free: ${error?.message || error}`)
+    }
+    return {
+      ok: true,
+      at: payload.at,
+      cached: false,
+      models: rows,
+      summary: { ok: rows.filter((row) => row.ok).length, total: rows.length },
+    }
   }
 
   async function status() {
@@ -934,6 +1013,7 @@ export function createCatalogService(ctx, rawConfig = {}, options = {}) {
     readEvents,
     rankings,
     balance,
+    healthFree,
     generationModels,
     generateImage,
     generateVideo,
