@@ -45,15 +45,16 @@
   },
   "scripts": {
     "test": "node --test tests/",
-    "check": "node --check index.js && node --check lib/client.js && node --test tests/"
+    "check": "node --check index.js && node --check lib/client.js && node --test tests/",
+    "install-smoke": "bash scripts/install-smoke.sh"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free.git"
+    "url": "git+https://github.com/lidgen360/dsh-openrouter-explorer-free.git"
   },
   "bugs": {
-    "url": "https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free/issues"
+    "url": "https://github.com/lidgen360/dsh-openrouter-explorer-free/issues"
   },
-  "homepage": "https://github.com/kvaziman85-dotcom/dsh-openrouter-explorer-free#readme",
+  "homepage": "https://explorer.lidogenerator.top",
   "author": "kvaziman85-dotcom"
 }

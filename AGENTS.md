@@ -20,7 +20,7 @@
 ## Команды
 
 ```sh
-node --test tests/              # 70 тестов: каталог, сервис, провайдер, журнал, состояние
+node --test tests/              # 74 теста: каталог, сервис, провайдер, журнал, состояние
 node scripts/test-profiles.mjs  # матрица профилей: web, headless, sdk, acp (4/4)
 node --check index.js && node --check lib/client.js
 ```
@@ -33,9 +33,9 @@ node --check index.js && node --check lib/client.js
 
 - В интерфейсе плагина обязателен `BrandMark` — логотип Lidogen 360 + ссылка `lidogenerator.top`
   (UTM, новая вкладка, `rel="noreferrer"`). Подробности — `docs/BRANDING.md`.
-- README пакета содержит блок «Сделано в Lidogen 360»; в GitHub About Website = `https://lidogenerator.top`.
+- README пакета содержит блок «Сделано в Lidogen 360»; в GitHub About Website = `https://explorer.lidogenerator.top`.
 - Новый продукт/лендинг добавляется в каталог `products.html` материнского сайта (`noindex` + `nofollow`).
-- Общие правила для всех приложений: `/Users/ila/Sites/BRAND-RULES.md`.
+- Общие правила бренда для всех приложений — `docs/BRANDING.md` в этом репозитории.
 
 <!-- tokenguard:guard -->
 ## Экономия контекста (tokenguard)

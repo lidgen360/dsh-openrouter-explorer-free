@@ -33,15 +33,33 @@
 
 ## Установка
 
-Плагин — обычный DSH-бандл (`dsh.bundle` + `dsh.client`), поэтому ставится в профиль через штатный менеджер:
+Плагин — обычный DSH-бандл (`dsh.bundle` + `dsh.client`), поэтому ставится в профиль через штатный
+менеджер плагинов (`dsh plugin` — это обёртка над pnpm в папке профиля, поэтому принимает путь к папке
+и к `.tgz`).
+
+**Из релизного tarball** (рекомендуется, ничего кроме DSH не нужно):
 
 ```sh
-# из папки, где лежит этот репозиторий
-dsh plugin --profile web add ./dsh-openrouter-explorer-free
+curl -LO https://github.com/lidgen360/dsh-openrouter-explorer-free/releases/download/v0.11.2/dsh-openrouter-explorer-free-0.11.2.tgz
+dsh plugin --profile web add ./dsh-openrouter-explorer-free-0.11.2.tgz
+```
+
+**Из git-клона:**
+
+```sh
+git clone https://github.com/lidgen360/dsh-openrouter-explorer-free.git
+cd dsh-openrouter-explorer-free
+dsh plugin --profile web add .
 ```
 
 Для Web-профиля из исходников харнеса (`pnpm dev:web`) — то же самое, но командой `pnpm dsh ...`.
 После установки HMR пересобирает профиль на лету, отдельный перезапуск обычно не нужен.
+
+Проверить, что бандл встал и скомпоновался:
+
+```sh
+dsh --profile web --dump-config | grep openrouter-explorer-free
+```
 
 Открыть: **кнопка «🛷 модели» в композере** (сразу рядом с выбором модели) — раскрывает меню каталога;
 полный дашборд — **правая боковая панель → «+» → «Модели OpenRouter»**.
@@ -138,6 +156,7 @@ tests/                  node:test, без сети
 ```sh
 npm test        # node --test tests/
 npm run check   # синтаксис + тесты
+npm run install-smoke  # npm pack → установка tarball в чистый DSH_HOME → --dump-config
 ```
 
 Плагин не требует сборки: `lib/client.js` — самодостаточный browser-бандл в формате загрузчика клиентских

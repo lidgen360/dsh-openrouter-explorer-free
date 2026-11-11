@@ -6,6 +6,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# release artifacts built by `npm pack`
+*.tgz
 
 # local handoff digests (not for GitHub)
 docs/CHAT-CURRENT-STATE.md
