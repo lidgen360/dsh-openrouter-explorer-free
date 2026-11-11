@@ -20,7 +20,7 @@
 ## Команды
 
 ```sh
-node --test tests/              # 74 теста: каталог, сервис, провайдер, журнал, состояние
+node --test "tests/**/*.test.mjs"  # 74 теста: каталог, сервис, провайдер, журнал, состояние
 node scripts/test-profiles.mjs  # матрица профилей: web, headless, sdk, acp (4/4)
 node --check index.js && node --check lib/client.js
 ```

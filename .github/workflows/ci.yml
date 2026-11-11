@@ -33,7 +33,7 @@ jobs:
           node --check lib/client.js
           for file in src/host/*.js; do node --check "$file"; done
       - name: Unit tests
-        run: node --test tests/
+        run: node --test "tests/**/*.test.mjs"
       - name: Secret guard
         shell: bash
         run: |

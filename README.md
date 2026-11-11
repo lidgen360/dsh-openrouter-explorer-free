@@ -154,7 +154,7 @@ tests/                  node:test, без сети
 ## Разработка
 
 ```sh
-npm test        # node --test tests/
+npm test        # node --test "tests/**/*.test.mjs"
 npm run check   # синтаксис + тесты
 npm run install-smoke  # npm pack → установка tarball в чистый DSH_HOME → --dump-config
 ```
@@ -182,7 +182,7 @@ dev-сборке (`pnpm dev:web`) перезагружайте вкладку п
 Плагин не держит снапшот в памяти: чтение идёт с диска, запись — под локом `state.json.lock` с очисткой
 протухшего лока, поэтому процессы не затирают историю и журнал друг друга.
 
-Проверка: `node --test tests/` (включая retention, дубли, гонки двух инстансов) и
+Проверка: `node --test "tests/**/*.test.mjs"` (включая retention, дубли, гонки двух инстансов) и
 `node scripts/test-profiles.mjs` (матрица профилей).
 
 ## Универсальность: профили, ОС, версии
