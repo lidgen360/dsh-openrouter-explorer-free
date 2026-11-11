@@ -56,5 +56,8 @@
     "url": "https://github.com/lidgen360/dsh-openrouter-explorer-free/issues"
   },
   "homepage": "https://explorer.lidogenerator.top",
-  "author": "kvaziman85-dotcom"
+  "author": {
+    "name": "Lidgen 360",
+    "url": "https://lidogenerator.top"
+  }
 }

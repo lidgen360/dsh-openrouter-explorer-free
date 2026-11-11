@@ -245,4 +245,4 @@ locale-сервиса харнесса, для остальных локалей
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE).
+MIT © 2026 Lidgen 360 — см. [LICENSE](LICENSE).
