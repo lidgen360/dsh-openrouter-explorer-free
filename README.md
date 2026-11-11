@@ -5,7 +5,7 @@
 и суперкнопка **«Едем на халяву»**: находит бесплатную модель с максимальным контекстом, пингует её, включает
 в провайдера OpenRouter и переключает на неё текущую сессию.
 
-<img src="assets/truck.svg" width="72" height="72" alt="OpenRouter Explorer Free — логотип" align="right">
+<img src="assets/logo-robot.png" width="72" height="72" alt="OpenRouter Explorer Free — логотип" align="right">
 
 ![Меню «Модели OpenRouter» в композере](docs/menu.jpg)
 
